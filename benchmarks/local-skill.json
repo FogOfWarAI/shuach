@@ -1,0 +1,20 @@
+{
+  "protocol": "temporal_future_observed_rating",
+  "models": ["current", "mean_delta", "ridge", "mlp", "gru", "transformer", "mmrnet"],
+  "seeds": [0, 1, 2, 3, 4],
+  "training": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "width": 32,
+    "heads": 4,
+    "layers": 2,
+    "dropout": 0.1,
+    "device": "mps",
+    "threads": 2
+  },
+  "model_devices": {"gru": "cpu"},
+  "scope": "Public-data adaptation of post-game snapshot-to-future-rating regression. Twelve three-minute snapshots and six features, OpenSkill five-future-observed-match proxy, returning-player-conditioned sample, not the original 115-feature verified-novice TrueSkill task. Target availability purges train/validation examples. Only 21 test examples meet the limited-observed-history subgroup; no novice effectiveness claim."
+}

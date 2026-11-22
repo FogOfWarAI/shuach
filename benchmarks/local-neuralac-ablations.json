@@ -1,0 +1,22 @@
+{
+  "protocol": "final",
+  "data_root": "datasets",
+  "datasets": ["uci-dota2"],
+  "models": ["neuralac_no_cooperation", "neuralac_no_competition", "neuralac_no_attention", "neuralac_author_bias"],
+  "seeds": [0, 1, 2, 3, 4],
+  "split_seed": 0,
+  "max_train_rows": null,
+  "max_eval_rows": null,
+  "training": {
+    "epochs": 50,
+    "batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 5,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 2
+  },
+  "protocol_note": "Exploratory fixed-setting component sensitivity specified after the main UCI holdout was evaluated; not a new untouched test or hyperparameter search. Same split, optimizer, epoch cap and early stopping as primary NeuralAC. Four variants disable a component or add the author's attention bias; all variants reported. Comparison uses primary five-seed NeuralAC artifacts, with no retraining or selection based on these test results."
+}

@@ -1,0 +1,32 @@
+{
+  "protocol": "final",
+  "data_root": "datasets",
+  "datasets": [
+    "uci-dota2"
+  ],
+  "models": [
+    "neuralac"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "split_seed": 0,
+  "max_train_rows": null,
+  "max_eval_rows": null,
+  "training": {
+    "epochs": 200,
+    "batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 5,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 4
+  },
+  "protocol_note": "Exploratory convergence sensitivity: all five primary UCI NeuralAC runs reached the 50-epoch cap, with validation-selected epochs 47-50. Increase only epoch cap to 200; keep batch, optimizer, patience, architecture and data split. CPU thread count is four, matching the primary NeuralAC runs; launch follows component ablation completion. This is a declared follow-up after primary test access, not an untouched confirmation set. Report every seed and compare paired predictions; do not replace the primary result table."
+}

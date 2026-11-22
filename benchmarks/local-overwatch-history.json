@@ -1,0 +1,25 @@
+{
+  "protocol": "temporal_completed_player_history",
+  "source": "datasets/raw/overwatch.jsonl",
+  "history_length": 10,
+  "same_domain_only": false,
+  "feedback_delay_seconds": 0,
+  "train_fraction": 0.7,
+  "valid_fraction": 0.15,
+  "models": ["static_deepsets", "history_deepsets", "owo_transformer", "owo", "dawn"],
+  "seeds": [0, 1, 2, 3, 4],
+  "training": {
+    "epochs": 15,
+    "patience": 4,
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "width": 32,
+    "heads": 4,
+    "layers": 2,
+    "dropout": 0.1,
+    "device": "mps",
+    "threads": 2
+  },
+  "scope": "Outcome-history, unordered 6v6, WDL architectural adaptations. Industrial feature sets, role/party assignments and original published result tables are not reproduced. All models receive the same target-domain information and completed-history features; DAWN adds internal domain-context conditioning. The width/depth are a prespecified local-compute configuration, not original industrial hyperparameters."
+}

@@ -1,0 +1,48 @@
+include LICENSE NOTICE THIRD_PARTY.md README.md CONTRIBUTING.md CHANGELOG.md
+include CODE_OF_CONDUCT.md SECURITY.md README.zh-CN.md
+include requirements-local-lock.txt
+recursive-include docs *.md
+recursive-include examples *.py *.json
+recursive-include benchmarks *.json
+recursive-include tests *.py
+include scripts/run_local.py scripts/analyze_experiments.py scripts/audit_results.py
+include scripts/prepare_dota_reference.py scripts/verify_neuralac_reference.py
+include scripts/verify_saved_predictors.py scripts/export_research_artifacts.py
+include scripts/benchmark_search.py scripts/benchmark_neuralac_reference.py
+global-exclude .DS_Store ._* *.py[cod]
+prune datasets
+prune runs
+prune .cache
+prune pdf
+prune reading
+prune manuscript
+include scripts/calibrate_hero_artifacts.py
+include scripts/verify_asymmetric_inputs.py
+include .github/workflows/tests.yml
+include scripts/audit_training_budgets.py
+include scripts/audit_decisions.py
+include scripts/audit_convergence_prefixes.py
+include scripts/audit_splits.py
+include scripts/analyze_cohorts.py
+include scripts/inspect_distribution.py
+include scripts/audit_calibration.py
+include scripts/analyze_calibration_comparisons.py
+include scripts/verify_neuralac_layout.py
+include scripts/diagnose_calibration.py
+include scripts/build_delivery_manifest.py
+include scripts/benchmark_neuralac_updates.py
+include scripts/run_specialist_search.py scripts/queue_specialist_search.py
+include scripts/audit_tuning_integrity.py scripts/extended_metrics.py
+include scripts/audit_tuning_data.py
+include scripts/export_tuning_results.py scripts/export_specialist_results.py
+include scripts/export_tuning_paper.py
+include scripts/verify_skillbench_reference.py
+include scripts/plotting_fonts.py
+include scripts/verify_tuned_predictors.py
+include scripts/audit_rich_history.py scripts/audit_league_data.py
+include scripts/run_rich_history_experiment.py
+include scripts/run_league_neural.py scripts/export_league_results.py
+include scripts/verify_indexed_predictors.py
+include scripts/run_rich_feature_probe.py
+include scripts/prepare_league_history.py scripts/run_league_baselines.py
+include scripts/export_rich_history_results.py

@@ -1,0 +1,36 @@
+{
+  "protocol": "synthetic_independent_decisions",
+  "mechanisms": [
+    "additive",
+    "cooperative"
+  ],
+  "population": 60,
+  "split_rows": {
+    "train": 30000,
+    "valid": 5000,
+    "test": 5000
+  },
+  "lobbies": 500,
+  "models": [
+    "neuralac"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "training": {
+    "epochs": 200,
+    "batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 5,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 2
+  },
+  "scope": "Exploratory NeuralAC convergence follow-up: all ten primary synthetic NeuralAC runs selected epoch 25 and hit the 25-epoch cap. Extend only the cap to 200, retaining seeds/worlds, splits, lobbies, optimizer, CPU threads, stopping and architecture. Report all ten runs separately from the primary five-model reference; do not use the larger budget as a matched-budget superiority comparison or replace primary results. Declared after primary test access."
+}

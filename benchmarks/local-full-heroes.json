@@ -1,0 +1,32 @@
+{
+  "protocol": "final",
+  "data_root": "datasets",
+  "datasets": ["uci-dota2", "neuralac-dota2018", "neuralac-lol"],
+  "models": ["prior", "logistic", "fm", "lightgbm", "mlp", "deepsets", "neuralac"],
+  "seeds": [0, 1, 2, 3, 4],
+  "split_seed": 0,
+  "max_train_rows": null,
+  "max_eval_rows": null,
+  "training": {
+    "epochs": 30,
+    "batch_size": 2048,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 5,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 4,
+    "max_trees": 500,
+    "tree_learning_rate": 0.05,
+    "tree_patience": 30,
+    "logistic_c": 1.0
+  },
+  "model_training": {
+    "fm": {"device": "mps"},
+    "mlp": {"device": "mps"},
+    "deepsets": {"device": "mps"},
+    "neuralac": {"epochs": 50, "batch_size": 1024, "device": "cpu"}
+  },
+  "protocol_note": "Frozen reference configuration before final-holdout evaluation; no test-guided tuning. NeuralAC follows paper bias-free bilinear attention, uses author-width 50 interaction MLP and dropout 0.2, but uses group splits and validation early stopping. This is an adapted protocol, not an exact reproduction of the original result table."
+}

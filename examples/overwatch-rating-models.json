@@ -1,0 +1,6 @@
+{
+  "protocol": "temporal_delayed_feedback",
+  "source": "datasets/raw/overwatch.jsonl",
+  "models": ["openskill", "openskill_bt_full", "openskill_tm_full"],
+  "separate_domains": [false]
+}

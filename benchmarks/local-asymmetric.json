@@ -1,0 +1,20 @@
+{
+  "protocol": "temporal_predator_outcome",
+  "datasets": ["dbd-2022", "dbd-2023"],
+  "models": ["prior", "history_frequency", "logistic", "lightgbm", "mlp", "ordinal"],
+  "seeds": [0, 1, 2, 3, 4],
+  "train_fraction": 0.7,
+  "valid_fraction": 0.15,
+  "feedback_delay_seconds": 0,
+  "training": {
+    "epochs": 30,
+    "patience": 5,
+    "batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "hidden_dim": 64,
+    "max_trees": 500,
+    "threads": 2
+  },
+  "scope": "Five-class prey-kill prediction using only map/avatar and completed predator history. Does not reconstruct four missing prey identities, infer counterfactual outcomes or assess 1v4 reassignment. Fixed reference parameters, no test-driven search."
+}

@@ -1,0 +1,10 @@
+{
+  "protocol": "temporal_delayed_feedback",
+  "source": "datasets/raw/overwatch.jsonl",
+  "train_fraction": 0.7,
+  "valid_fraction": 0.15,
+  "feedback_delay_seconds": 0,
+  "models": ["elo", "trueskill", "openskill"],
+  "separate_domains": [false, true],
+  "selection_note": "Reference hyperparameters frozen before test scoring. Three-class calibration fit only on completed validation events; previous test outcomes update the rating state only after declared availability. Timestamp semantics remain an explicit assumption."
+}

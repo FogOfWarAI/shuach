@@ -1,0 +1,21 @@
+{
+  "protocol": "pilot",
+  "data_root": "datasets",
+  "datasets": ["uci-dota2", "neuralac-dota2018", "neuralac-lol"],
+  "models": ["prior", "linear", "fm", "mlp", "deepsets"],
+  "seeds": [0],
+  "split_seed": 0,
+  "max_train_rows": 20000,
+  "max_eval_rows": 3000,
+  "training": {
+    "epochs": 10,
+    "batch_size": 512,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 3,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 4
+  }
+}

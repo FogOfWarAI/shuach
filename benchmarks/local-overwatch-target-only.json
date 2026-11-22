@@ -1,0 +1,36 @@
+{
+  "protocol": "temporal_completed_player_history",
+  "source": "datasets/raw/overwatch.jsonl",
+  "history_length": 10,
+  "same_domain_only": true,
+  "feedback_delay_seconds": 0,
+  "train_fraction": 0.7,
+  "valid_fraction": 0.15,
+  "models": [
+    "history_deepsets",
+    "owo",
+    "dawn"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "training": {
+    "epochs": 15,
+    "patience": 4,
+    "batch_size": 128,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "width": 32,
+    "heads": 4,
+    "layers": 2,
+    "dropout": 0.1,
+    "device": "mps",
+    "threads": 2
+  },
+  "scope": "Exploratory fixed-setting information ablation specified after primary results were partially available. Only target-domain completed history and static outcomes are exposed; global and other-mode static columns are masked before training-only normalization. Shapes, target mode, optimizer, epoch cap and validation selection stay fixed. All seeds and models reported. This does not reproduce the original industrial CHAMP evaluation.",
+  "target_domain_features_only": true
+}

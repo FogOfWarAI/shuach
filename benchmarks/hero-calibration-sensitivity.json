@@ -1,0 +1,10 @@
+{
+  "primary_run": "runs/local-full-heroes-v1",
+  "datasets": ["uci-dota2", "neuralac-dota2018", "neuralac-lol"],
+  "models": ["prior", "logistic", "fm", "lightgbm", "mlp", "deepsets", "neuralac"],
+  "seeds": [0, 1, 2, 3, 4],
+  "variants": ["temperature", "affine"],
+  "probability_clip_for_logit": 1e-7,
+  "scope": "Exploratory postprocessing specified after initial UCI primary test access. Reload fixed primary checkpoints; fit positive-slope temperature or affine calibration on their original validation split only; evaluate every declared model/seed on unchanged test rows. Retain raw primary results. No test labels enter fitting; not an untouched confirmation experiment or claim of a new calibration method.",
+  "motivation": "Separate calibration sensitivity from ranking and model architecture. NeuralAC has an antisymmetric side-score difference, whereas other static baselines can represent an intercept/side preference. This audit does not identify true causal side advantage."
+}

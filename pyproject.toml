@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77", "packaging>=24.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gamematch-research"
+dynamic = ["version"]
+description = "Reproducible learning and decision experiments for game matchmaking"
+readme = "docs/package-description.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY.md"]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "pandas>=2.0", "scipy>=1.11", "joblib>=1.3", "threadpoolctl>=3.2", "scikit-learn>=1.4", "torch>=2.2"]
+
+[project.optional-dependencies]
+tabular = ["lightgbm>=4.0"]
+rating = ["trueskill>=0.4.5", "openskill>=6.0"]
+dev = ["coverage>=7", "ruff>=0.8", "build>=1"]
+research = ["matplotlib>=3.8"]
+parquet = ["pyarrow>=21.0.0"]
+
+[project.scripts]
+gamematch = "gamematch.cli:main"
+
+[project.urls]
+Repository = "https://github.com/FogOfWarAI/shuach"
+Issues = "https://github.com/FogOfWarAI/shuach/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "gamematch.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

@@ -1,0 +1,12 @@
+GameMatch research software
+Copyright 2026 GameMatch contributors
+
+Project-authored Python code, configuration and software documentation are
+licensed under Apache License 2.0. This notice does not relicense research
+papers, downloaded datasets, external repository snapshots, or dependencies.
+Those items retain their original licenses and are excluded from the software
+distribution. See THIRD_PARTY.md and dataset provenance records.
+
+NeuralAC, OmniNet, OwO, DAWN and MMR-Net modules are independent mathematical
+reimplementations or explicitly documented public-data adaptations. They do
+not contain copied source from the cached NeuralAC GPL repository.

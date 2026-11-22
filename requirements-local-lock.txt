@@ -1,0 +1,12 @@
+# Selected tested Python 3.12 / Apple Silicon versions; not a complete transitive
+# dependency lock or a cross-platform wheel lock. Run manifests record runtime versions.
+numpy==2.3.4
+pandas==2.3.3
+scipy==1.17.1
+scikit-learn==1.8.0
+torch==2.12.0
+lightgbm==4.7.0
+trueskill==0.4.5
+openskill==6.2.0
+joblib==1.5.3
+threadpoolctl==3.6.0

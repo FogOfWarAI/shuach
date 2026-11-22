@@ -1,0 +1,21 @@
+{
+  "protocol": "synthetic_independent_decisions",
+  "mechanisms": ["additive", "cooperative"],
+  "population": 60,
+  "split_rows": {"train": 30000, "valid": 5000, "test": 5000},
+  "lobbies": 500,
+  "models": ["logistic", "fm", "mlp", "deepsets", "neuralac"],
+  "seeds": [0, 1, 2, 3, 4],
+  "training": {
+    "epochs": 25,
+    "batch_size": 1024,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 5,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 2
+  },
+  "scope": "Five independent hidden worlds per mechanism. Full ordered candidate search is compared with random and eight-candidate search under the same learned score. Monotonic score transformations are prespecified diagnostics. No inference of real-player intervention effects."
+}

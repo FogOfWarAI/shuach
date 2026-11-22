@@ -1,0 +1,10 @@
+{
+  "protocol": "synthetic_independent_decisions",
+  "mechanisms": ["additive"],
+  "population": 30,
+  "split_rows": {"train": 1000, "valid": 200, "test": 200},
+  "lobbies": 10,
+  "models": ["logistic", "mlp"],
+  "seeds": [0],
+  "training": {"epochs": 5, "patience": 2, "batch_size": 128, "device": "cpu", "threads": 2}
+}

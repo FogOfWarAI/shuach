@@ -1,0 +1,29 @@
+{
+  "protocol": "pilot",
+  "data_root": "datasets",
+  "datasets": [
+    "uci-dota2"
+  ],
+  "models": [
+    "logistic",
+    "mlp"
+  ],
+  "seeds": [
+    0
+  ],
+  "split_seed": 0,
+  "max_train_rows": 3000,
+  "max_eval_rows": 500,
+  "training": {
+    "epochs": 10,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "patience": 3,
+    "embedding_dim": 20,
+    "hidden_dim": 64,
+    "device": "cpu",
+    "threads": 2
+  },
+  "protocol_note": "Small installation/use example, not a research efficacy comparison. Pilot excludes the official UCI test file."
+}

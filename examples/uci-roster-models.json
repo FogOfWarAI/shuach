@@ -1,0 +1,17 @@
+{
+  "protocol": "pilot",
+  "datasets": ["uci-dota2"],
+  "models": ["signed_hero", "set_transformer"],
+  "seeds": [0],
+  "max_train_rows": 1500,
+  "max_eval_rows": 250,
+  "training": {
+    "device": "cpu",
+    "epochs": 3,
+    "patience": 2,
+    "batch_size": 64,
+    "threads": 2,
+    "embedding_dim": 8,
+    "hidden_dim": 32
+  }
+}
