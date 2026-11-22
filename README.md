@@ -2,6 +2,8 @@
 
 Machine learning for balanced multiplayer matchmaking.
 
+[Documentation](https://fogofwarai.github.io/shuach/) · [Search the Python API](https://fogofwarai.github.io/shuach/reference/)
+
 [中文](README.zh-CN.md) · [Getting started](docs/getting-started.md) · [Python API](docs/api.md) · [Command reference](docs/cli.md)
 
 Given a lobby, which teams should play each other? Shuach lets you score possible lineups, keep parties together, fill role slots, and compare feasible assignments. You can train outcome predictors on historical games, replay player ratings in time order, and measure the quality of assignment decisions on synthetic lobbies with a known outcome mechanism.

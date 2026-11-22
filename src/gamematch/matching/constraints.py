@@ -14,7 +14,7 @@ class Assignment:
     Attributes:
         teams: Left and right player tuples.
         roles: Left and right role tuples in slot order, or None for untyped teams.
-            When present, teams[side][slot] is assigned roles[side][slot].
+            When present, `teams[side][slot]` is assigned `roles[side][slot]`.
     """
 
     teams: tuple[tuple, tuple]

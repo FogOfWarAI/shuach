@@ -1,5 +1,7 @@
 # Shuach · 耍起
 
+[文档首页](https://fogofwarai.github.io/shuach/) · [查询 Python API](https://fogofwarai.github.io/shuach/reference/)
+
 [English](README.md) · 面向多人游戏的匹配学习与分队实验框架。项目源自 GameMatch，Python 导入名和命令行入口沿用 `gamematch`。
 
 GameMatch 是面向竞技游戏的 Python 研究库。给定一个小大厅，它可以找出满足组排和角色要求、评分最接近的两队。给定历史对局，它可以训练模型，估计新阵容的胜率或逐场更新玩家评级。当前开发版为 **0.1.0rc5.dev3**。
