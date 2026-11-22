@@ -39,9 +39,13 @@ Shapes use `B` for batch size, `P` for players per side, `T` for history length 
 
 ## Outcome and sequence models
 
+For the source of each architecture and the changes made in Shuach, see [model papers and BibTeX](papers.md) and the [implementation cards](model-cards.md).
+
 `gamematch.models.make_model(name, vocab_size, embedding_dim=20, hidden_dim=64, dropout=None, interaction_hidden=50)` returns a PyTorch module for `linear`, `signed_hero`, `fm`, `mlp`, `deepsets`, `set_transformer`, `neuralac` or its named ablations. Input is a `LongTensor [B,2,5]`; output is binary logits `[B]`. Apply sigmoid to obtain probabilities. Tabular `prior`, `logistic` and `lightgbm` are runner choices, not neural factory names. `dropout=None` retains the reference defaults (0.2 for NeuralAC, zero for MLP/Deep Sets); an explicit value configures activation dropout. The tuning engine supplies the selected value; the original reference runner retains its established defaults.
 
 `NeuralAC(vocab_size, embedding_dim=20, interaction_hidden=50, dropout=.2, cooperation=True, competition=True, attention=True, attention_bias=False)` accepts 5v5 only. Disabling a component freezes its unused parameters. `attention_bias=False` follows the paper; the author-bias variant follows that detail of the released implementation. A full comparison still depends on data splits and training settings.
+
+<!-- bib: neuralac fm deepsets settransformer -->
 
 `gamematch.models.omninet.OmniEncoder(width=32, heads=4, layers=2, dropout=.1, omni=True)` maps `[B,T,width]` to the same shape; `valid [B,T]` masks padding. `omni=False` disables cross-layer meta-attention. Empty masked sequences return zero representations.
 
@@ -52,6 +56,10 @@ For the two history Deep Sets variants, set `config["deepsets_dropout"]` explici
 `MMRNet(features, hero_vocab, steps=12, width=160, heads=10, layers=6, dropout=.1, omni=True)` consumes snapshots `[B,steps,features]`, lineup IDs `[B,2,P]` and valid mask `[B,steps]`. Output is a scalar `[B]`; the experiment runner interprets it as a standardized future-rating residual. `make_skill_model(name, features, hero_vocab, config)` chooses `mlp`, `gru`, `transformer` or `mmrnet`; baseline and original-paper defaults are not silently interchangeable.
 
 `gamematch.models.ordinal.OrdinalMLP(features, hidden=64, classes=5, dropout=0.0)` provides a monotone cumulative-link outcome head and returns normalized log probabilities. The asymmetric runner converts them to five class probabilities.
+
+The OwO path comes from CUPID, the domain-conditioned DAWN path from CHAMP, and the cross-layer encoder from OmniNet. The MMR-Net adaptation uses QuickSkill as its source. McCullagh gives the statistical basis for the ordinal head.
+
+<!-- bib: cupid champ omninet quickskill ordinal -->
 
 ## Evaluation
 

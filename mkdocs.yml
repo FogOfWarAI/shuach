@@ -6,8 +6,8 @@ repo_name: FogOfWarAI/shuach
 edit_uri: ""
 theme:
   name: material
-  icon:
-    logo: material/controller-classic
+  logo: assets/shuach-match.png
+  favicon: assets/shuach-match-32.png
   font: false
   palette:
     primary: custom
@@ -63,6 +63,7 @@ nav:
       - Saved predictors: inference-api.md
       - Research API: research-api.md
       - Model cards: model-cards.md
+      - Papers and BibTeX: papers.md
   - CLI: cli.md
   - 中文:
       - 中文入门: start-zh.md

@@ -103,6 +103,10 @@ and `ThurstoneMostellerFull`. Use their [catalog IDs](model-additions.md) in JSO
 Calling `update` directly gives the caller control of the timeline. For a
 prediction at time `t`, only deliver earlier outcomes with `available_at < t`.
 
+For the adapter you use, cite Elo's rating system, the TrueSkill paper, or the OpenSkill software paper and its Weng–Lin update methods.
+
+<!-- bib: elo trueskill openskill weng2011 -->
+
 ## Read a run and diagnose a failed call
 
 `gamematch.reporting.create_run_report(run_directory, output=None)` returns the

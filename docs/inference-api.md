@@ -32,6 +32,8 @@ python examples/hero_composition_search.py --artifact runs/uci-example/uci-dota2
 
 ## Choose a predictor
 
+Cite the model stored in your checkpoint. A predictor can load several architectures. Find the trained model ID in the run configuration, then look up its source in [model papers and BibTeX](papers.md).
+
 Here `RUN` is the output directory passed to the relevant benchmark and `N` is the number of examples. Supply at least one example to each of these four interfaces. The optional `batch_size` is a positive Python integer. It limits the neural forward pass. Tabular models may preprocess and score the whole input at once. The three constructors that take `device` accept `"cpu"` (default), `"cuda"` and `"mps"`. Requesting an unavailable accelerator raises `ValueError`.
 
 | Constructor and artifact location | Arguments to `predict` | Returned NumPy array |
