@@ -1,0 +1,22 @@
+:root {
+  --md-primary-fg-color: #112d37;
+  --md-accent-fg-color: #aa3922;
+  --md-typeset-a-color: #145870;
+  --md-text-font: "Inter", system-ui, sans-serif;
+}
+.md-typeset .match-example {
+  background: #112d37; color: #f5faf9; border-radius: .45rem;
+  padding: 1rem 1.2rem; margin: 1.25rem 0;
+}
+.match-example strong {color: #ffb78f}
+.match-example p {margin: .4em 0}
+.md-typeset .api-filter {display: block; margin-bottom: 1rem}
+.api-filter input {
+  font: inherit; width: 100%; padding: .6rem; margin-top: .3rem;
+  border: 1px solid #718487; border-radius: .2rem; background: white; color: #132d37;
+}
+.api-module {margin: .6rem 0 1.2rem; border-left: 3px solid #bad8d7; padding-left: .8rem}
+.api-module a {overflow-wrap: anywhere}
+.api-module ul {display: flex; flex-wrap: wrap; gap: .25rem .8rem; padding: 0}
+.md-typeset .api-module li {list-style: none; margin: 0}
+[hidden] {display: none !important}
