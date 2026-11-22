@@ -1,0 +1,103 @@
+name: CI and release
+on:
+  push:
+    branches: [main, develop, release]
+    tags: ['v*']
+  pull_request:
+    branches: [main, develop, release]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'macOS'
+        run: brew install libomp
+      - if: runner.os == 'Linux'
+        name: Install the CPU build of PyTorch
+        run: python -m pip install 'torch>=2.2' --index-url https://download.pytorch.org/whl/cpu
+      - name: Run the base-install quickstart
+        run: |
+          python -m pip install .
+          gamematch --version
+          python examples/constrained_assignment.py
+          gamematch decision-benchmark --config examples/synthetic-smoke.json --output runs/ci-smoke
+          gamematch report runs/ci-smoke
+      - run: python -m pip install -e '.[tabular,rating,dev]'
+      - run: python -c 'import lightgbm, trueskill, openskill; print("Optional benchmark dependencies import successfully")'
+      - run: ruff check src tests scripts examples
+      - run: python -m coverage run --source=gamematch -m unittest discover -s tests -v
+      - run: python -m coverage report --fail-under=85
+      - run: python -m coverage json -o coverage.json
+      - run: python examples/asymmetric_assignment.py
+      - run: python -m build
+      - run: python scripts/inspect_distribution.py
+      - name: Verify installed wheel
+        run: |
+          python -m pip install --force-reinstall --no-deps --no-index dist/*.whl
+          python -c "from pathlib import Path; import gamematch; assert Path('src/gamematch').resolve() != Path(gamematch.__file__).resolve().parent"
+          python -m pip check
+          gamematch --version
+          gamematch doctor
+          gamematch lobby-demo --seed 0
+          python -m unittest discover -s tests -v
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.python }}
+          path: coverage.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions-${{ matrix.os }}-${{ matrix.python }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            reports/package-inspection.json
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: cpu
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions-ubuntu-latest-3.12
+          path: verified
+      - name: Verify tag, release branch and distributions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/release
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          report = json.loads(Path("verified/reports/package-inspection.json").read_text())
+          assert report["status"] == "passed"
+          assert os.environ["TAG"] == "v" + report["version"]
+          for artifact in report["artifacts"]:
+              path = Path("verified/dist") / Path(artifact["file"]).name
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == artifact["sha256"]
+          PY
+      - name: Publish verified artifacts to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          args=()
+          if [[ "$TAG" =~ (a|b|rc|dev)[0-9] ]]; then args+=(--prerelease); fi
+          gh release create "$TAG" --verify-tag --generate-notes "${args[@]}" \
+            verified/dist/*.whl verified/dist/*.tar.gz verified/reports/package-inspection.json

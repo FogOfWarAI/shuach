@@ -1,6 +1,9 @@
 GameMatch research software
 Copyright 2026 GameMatch contributors
 
+Published as Shuach by Fog of War AI.
+Project repository: https://github.com/FogOfWarAI/shuach
+
 Project-authored Python code, configuration and software documentation are
 licensed under Apache License 2.0. This notice does not relicense research
 papers, downloaded datasets, external repository snapshots, or dependencies.

@@ -49,7 +49,7 @@ with 92.03% core statement coverage. Its macOS and local Ubuntu ARM64 guest
 results are recorded under `reports/software-quality-20261118/` in the parent
 research workspace. The following table describes the earlier rc4 baseline.
 
-GameMatch is a local research artifact. Public publication and submission have not occurred. This page records completed engineering evidence and remaining release work.
+The table below records the original GameMatch prepublication review. The public source repository is now [Shuach](https://github.com/FogOfWarAI/shuach). The historical test counts and release tasks describe the versions named in this document.
 
 The [JMLR MLOSS guidance](https://www.jmlr.org/mloss/mloss-info.html), checked on 14 November 2026, calls for a short software description, a public repository, clear licensing and community evidence in the cover letter. Its review guidance considers documentation, contribution pathways, comparative software measurements, testing, platform support and maintainability. These are review criteria, not a promise that completing a checklist produces acceptance.
 

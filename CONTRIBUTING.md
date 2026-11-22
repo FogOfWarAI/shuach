@@ -45,6 +45,10 @@ and getting-started guides. Keep those examples self-contained and data-free.
 
 ## Write a reproducible bug report
 
+Linux and macOS are the full-suite CI targets. On Windows, the synthetic smoke
+benchmark works, but the full suite currently encounters Windows-specific
+symbolic-link permissions and file-locking errors in indexed-data and atomic-write tests.
+
 Include the output of `gamematch --version` and `gamematch doctor`, the exact
 command or short Python example, the expected result and the observed result.
 For research runs, include the protocol, model, seed, array shapes and the

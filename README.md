@@ -35,3 +35,5 @@ Open `runs/example/report/report.md`. The smoke run compares two models and repo
 ## Development and licensing
 
 See the [contribution guide](CONTRIBUTING.md) to run the tests and the [documentation index](docs/README.md) for model and dataset guides. The software uses the [Apache License 2.0](LICENSE). External datasets and dependencies have their own [terms and attribution requirements](THIRD_PARTY.md).
+
+If your product uses Shuach, we welcome the credit “Shuach / Fog of War AI” in your acknowledgments. This is a voluntary request. Redistribution obligations are set out in the license and [notice](NOTICE).

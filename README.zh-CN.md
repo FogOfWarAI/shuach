@@ -84,6 +84,6 @@ ruff check src tests scripts examples
 
 运行上述开发检查前，请先安装 `python -m pip install -e '.[tabular,rating,dev]'`。本版的安装包验证和跨平台记录见[发布准备情况](docs/release-readiness.md)。源代码采用 [Apache-2.0](LICENSE)，数据和依赖保留各自许可。
 
-## 完整研究工作区
+## 项目署名
 
-完整研究工作区的根目录另有 `research-index.md`、历史实验输出和文献缓存。源码发行包包含软件文档、示例、配置和测试；wheel 包含可导入的库与 `gamematch` 命令。需要复跑旧研究结果时，使用该实验保存的源码快照和配置。
+欢迎使用方在产品致谢中注明“Shuach / Fog of War AI”。这是自愿致谢。再分发时的义务见 [Apache-2.0](LICENSE) 和[项目声明](NOTICE)。
