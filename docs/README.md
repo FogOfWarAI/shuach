@@ -28,4 +28,4 @@ Ava (6) and Bo (4) can captain a team. Cy (3) and Di (1) fill the remaining slot
 
 The [Python API reference](reference/index.md) lists functions, classes and methods by module. For data shapes, supported inputs and worked calls, use the [Python guide](api.md). For terminal commands and output files, use the [CLI reference](cli.md).
 
-[中文入门](start-zh.md) · [中文 API 指南](api-zh.md)
+[Model papers and BibTeX](papers.md) · [中文入门](start-zh.md) · [中文 API 指南](api-zh.md)

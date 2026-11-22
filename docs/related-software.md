@@ -17,6 +17,8 @@ Skillbench's data loader also supports a chronological split; the random split d
 
 ## Executed Skillbench interface probe
 
+<!-- bib: skillissues -->
+
 The local audit (`reports/skillbench-runtime-probe.json` in the full research workspace) executes unmodified pinned source modules and the author simulator on generated fixtures, using Python 3.10 and locally available dependencies. It is not a pip installation of the author's dependency lock, a CS:GO benchmark reproduction, or a speed comparison. Python 3.10 preserves the set-sampling API used by the pinned `TeamPair` implementation. The original source and research audit are cached separately and excluded from GameMatch distributions.
 
 - With the same TrueSkill 0.4.5 parameters, draw probability 0.1 and `mpmath` backend, 200 generated 5v5 events give maximum probability error `2.67e-15` and rating-state error `3.56e-14`. GameMatch's default draw probability is 0.02; default configurations are therefore not silently equated.

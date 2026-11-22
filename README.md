@@ -1,5 +1,7 @@
 # Shuach · 耍起
 
+<img src="docs/assets/shuach-match.png" alt="Shuach matchmaking icon" width="96" height="96">
+
 Machine learning for balanced multiplayer matchmaking.
 
 [Documentation](https://fogofwarai.github.io/shuach/) · [Search the Python API](https://fogofwarai.github.io/shuach/reference/)

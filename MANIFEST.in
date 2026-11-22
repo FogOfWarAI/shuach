@@ -2,6 +2,8 @@ include LICENSE NOTICE THIRD_PARTY.md README.md CONTRIBUTING.md CHANGELOG.md
 include CODE_OF_CONDUCT.md SECURITY.md README.zh-CN.md
 include requirements-local-lock.txt
 recursive-include docs *.md
+include docs/models.bib
+include docs/assets/shuach-match.png
 recursive-include examples *.py *.json
 recursive-include benchmarks *.json
 recursive-include tests *.py

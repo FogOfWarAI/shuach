@@ -32,6 +32,8 @@ The independent implementation follows [Gu et al., AAAI 2021](https://ojs.aaai.o
 
 The main implementation defaults to bias-free bilinear attention as written in the paper; `neuralac_author_bias` enables the released code's biases. `neuralac_no_cooperation`, `neuralac_no_competition` and `neuralac_no_attention` expose component sensitivity. They are evaluated with unchanged optimizer/split settings on UCI in an explicitly exploratory run specified after primary test scores were available. All variants are retained; no test-based winner is selected as a revised primary model. Group splits, batch size and validation stopping differ from the authors' original protocol.
 
+<!-- bib: neuralac -->
+
 ## OwO and DAWN adaptations
 
 Sources are [CUPID](https://doi.org/10.1145/3686978), [CHAMP](https://arxiv.org/abs/2609.04870), and their cited OmniNet design. `OmniEncoder` runs Transformer layers, attends over their stacked tokens, concatenates per-token depth outputs, projects them back to width and adds a normalized residual. This explicit dense reduction resolves an implementation detail not fully specified in the matchmaking papers; it is not the authors' released network code or a claim to all OmniNet variants.
@@ -42,12 +44,20 @@ The original MOBA designs model position-sensitive 5v5 slots and richer industri
 
 The specialist follow-up additionally declares `pooling="team"` and `norm_first=True/False` choices. Team pooling averages players within each side and temporal/spatial view, preserving four ordered representations; DAWN's domain token remains separate. This variant is tested for within-team permutation invariance and team-assignment sensitivity. It is a separately named structural adaptation, so a winning variant must not be reported as the unchanged reference OwO/DAWN. The [search protocol](hyperparameter-search.md) records budgets and exploratory limitations.
 
+<!-- bib: cupid champ omninet -->
+
 ## MMR-Net adaptation
 
 [QuickSkill](https://doi.org/10.1145/3511808.3557070) motivates predicting future rating from sequential early-game performance. The public implementation uses twelve three-minute snapshots and six continuous features, separate lineup embedding and temporal positions. A dense projection replaces industrial discretized feature embeddings. The reference run uses width 32, four heads and two layers; the class exposes larger original-style defaults separately.
 
 The model predicts a standardized residual relative to the current observed rating. Baseline models receive the same snapshots and lineups where applicable; current-rating persistence is always included. The target is rebuilt OpenSkill state after five additional observations, with temporal purging. It is neither actual MMR nor a verified novice cohort. The small, selected test cohort makes uncertainty and scope more important than a small raw MAE difference.
 
+<!-- bib: quickskill -->
+
 ## Conditional and unavailable reproductions
 
 OptMatch requires verified player-character histories and an implementation that can be mapped to the original method. The supplied PTOM anonymous repository previously returned an access error. Teammate autoencoder variants remain candidates for future work.
+
+<!-- bib: optmatch ptom -->
+
+[Download the model bibliography](models.bib).

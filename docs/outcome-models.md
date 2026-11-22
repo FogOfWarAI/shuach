@@ -86,6 +86,10 @@ inputs. These fixtures verify software behavior and are not efficacy experiments
 
 ## Comparisons and paper terminology
 
+The [model bibliography](papers.md) lists the source for each research model. For OwO and DAWN, cite CUPID and CHAMP respectively and describe the history inputs and pooling used in your run.
+
+<!-- bib: cupid champ -->
+
 Compare architectures under the same input information, split, target definition
 and declared selection/calibration budgets. Compare additional history fields in
 separate information-set contrasts. A model's higher score with additional fields
