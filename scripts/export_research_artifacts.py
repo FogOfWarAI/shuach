@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 GameMatch contributors
 
-"""Generate manuscript tables and scientific figures from analyzed artifacts."""
+"""Generate experiment tables and figures from analyzed artifacts."""
 
 import hashlib
 import json
@@ -199,7 +199,7 @@ def optimizer_update_table(tables):
 def main():
     source = Path("reports/analysis/results.json")
     data = json.loads(source.read_text())
-    tables, figures = Path("manuscript/tables"), Path("manuscript/figures")
+    tables, figures = Path("reports/tables"), Path("reports/figures")
     tables.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
     status_lines = [

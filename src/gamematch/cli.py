@@ -11,14 +11,12 @@ import platform
 from pathlib import Path
 
 import numpy as np
-import torch
 
 from . import __version__
 from .data.acquisition import REGISTRY, fetch_dataset
 from .data.heroes import SOURCES, prepare
-from .matching.lobby import exact_balance, partitions
+from .matching.lobby import exact_balance, local_swap_balance, partitions
 from .reporting import create_run_report
-from .runner import run_benchmark
 
 
 def main(argv=None):
@@ -33,6 +31,10 @@ def main(argv=None):
     models = commands.add_parser("models", help="List model IDs, tasks and input contracts")
     models.add_argument("--task", choices=["outcome_prediction", "future_observed_rating"])
     commands.add_parser("input-profiles", help="List input contracts and adapter boundaries")
+    schema = commands.add_parser(
+        "feature-schema", help="Inspect an executable input/output feature contract"
+    )
+    schema.add_argument("--profile", required=True)
     check = commands.add_parser("check-models", help="Check input and runner compatibility")
     check.add_argument("--profile", required=True)
     check.add_argument("--models", nargs="+", required=True)
@@ -91,6 +93,12 @@ def main(argv=None):
         "lobby-demo", help="Synthetic exact-search example with an independent evaluator"
     )
     demo.add_argument("--seed", type=int, default=0)
+    approx = commands.add_parser(
+        "lobby-approx", help="Anytime local-swap assignment for lobbies too large to enumerate"
+    )
+    approx.add_argument("--players", type=int, default=20)
+    approx.add_argument("--seed", type=int, default=0)
+    approx.add_argument("--time-budget", type=float, default=2.0)
     args = parser.parse_args(argv)
     if args.command in {"models", "input-profiles", "check-models", "outcome-benchmark"}:
         from dataclasses import asdict
@@ -121,6 +129,13 @@ def main(argv=None):
             print(json.dumps(value, indent=2))
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
+    elif args.command == "feature-schema":
+        from .catalog import feature_schema_for
+
+        try:
+            print(json.dumps(feature_schema_for(args.profile).to_dict(), indent=2))
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
     elif args.command == "doctor":
         optional_dependencies = {}
         for name in ("lightgbm", "trueskill", "openskill"):
@@ -139,13 +154,28 @@ def main(argv=None):
                 }
             else:
                 optional_dependencies[name] = {"status": "available", "version": version}
+        # The base install deliberately has no PyTorch; report that state
+        # instead of failing at import time.
+        try:
+            import torch
+        except (ImportError, OSError) as exc:
+            torch_version = None
+            cuda_available = mps_available = None
+            torch_error = f"{type(exc).__name__}: {exc}"
+        else:
+            torch_version = torch.__version__
+            cuda_available = torch.cuda.is_available()
+            mps_available = torch.backends.mps.is_available()
+            torch_error = None
         value = {
             "python": platform.python_version(),
-            "torch": torch.__version__,
+            "torch": torch_version,
+            "torch_status": "available" if torch_version else "not_installed",
+            "torch_error": torch_error,
             "machine": platform.machine(),
             "logical_cpus": os.cpu_count(),
-            "cuda_available": torch.cuda.is_available(),
-            "mps_available": torch.backends.mps.is_available(),
+            "cuda_available": cuda_available,
+            "mps_available": mps_available,
             "optional_dependencies": optional_dependencies,
         }
         print(json.dumps(value, indent=2))
@@ -157,6 +187,8 @@ def main(argv=None):
         _, _, manifest = prepare(args.dataset, args.workspace / "datasets", "pilot")
         print(json.dumps(manifest, indent=2))
     elif args.command == "benchmark":
+        from .runner import run_benchmark
+
         path = run_benchmark(args.config.resolve(), args.workspace.resolve(), args.output.resolve())
         print(f"Report: {path}")
     elif args.command == "report":
@@ -213,3 +245,25 @@ def main(argv=None):
             }
         )
         print(json.dumps(assignment, indent=2))
+    elif args.command == "lobby-approx":
+        from math import comb
+
+        if args.players < 4 or args.players % 2 or not args.time_budget > 0:
+            parser.error("--players must be even and >= 4; --time-budget must be positive")
+        rng = np.random.default_rng(args.seed)
+        skills = rng.normal(size=args.players)
+        team_size = args.players // 2
+
+        def predict(candidates):
+            difference = np.asarray(
+                [skills[list(a)].mean() - skills[list(b)].mean() for a, b in candidates]
+            )
+            return 1 / (1 + np.exp(-difference))
+
+        result = local_swap_balance(
+            range(args.players), team_size, predict,
+            time_budget=args.time_budget, seed=args.seed,
+        )
+        result["exact_candidate_count"] = comb(args.players, team_size)
+        result["evidence_type"] = "synthetic_additive_skills_approximate_solver"
+        print(json.dumps(result, indent=2))

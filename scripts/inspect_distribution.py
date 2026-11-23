@@ -59,8 +59,6 @@ def inspect(path):
                 "datasets",
                 "runs",
                 "pdf",
-                "reading",
-                "manuscript",
             }
             or part.startswith("._")
             for part in parts
@@ -164,7 +162,7 @@ def main(argv=None):
         "status": "passed",
         "version": __version__,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
-        "scope": "Local archives only: expected source, source headers, licensing, metadata, packaged documentation links, and exclusion of research/cache/binary artifacts. No publication or external adoption implied.",
+        "scope": "Local archives only: expected source, source headers, licensing, metadata, packaged documentation links, and exclusion of research/cache/binary artifacts.",
         "artifacts": [inspect(path) for path in paths],
     }
     destination = args.output

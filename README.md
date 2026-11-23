@@ -21,16 +21,28 @@ python -m pip install -e .
 python examples/constrained_assignment.py
 ```
 
-The example prints a feasible team assignment and role slots. It runs on CPU with generated players. The project originated as GameMatch. The Python import and CLI are both named `gamematch`, and the distribution is `gamematch-research`.
+The example prints a feasible team assignment and role slots. It runs on CPU with generated players. The project originated as GameMatch. The Python import and CLI are both named `gamematch`, and the distribution is `gamematch-research`. **PyTorch is optional**: the base install runs the catalog, feature contracts and CPU assignment examples without downloading CUDA wheels.
+
+Inspect an executable input/output contract, or solve a lobby too large to enumerate, without any training dependencies:
+
+```sh
+gamematch feature-schema --profile overwatch-history
+gamematch lobby-approx --players 20 --time-budget 1
+```
+
+See [unified feature contracts](docs/feature-schema.md) for declaring new modalities, scopes and output heads.
 
 ## Train, evaluate, and inspect a report
 
+Training commands need the `neural` extra:
+
 ```sh
+python -m pip install -e '.[neural]'
 gamematch decision-benchmark --config examples/synthetic-smoke.json --output runs/example
 gamematch report runs/example
 ```
 
-Open `runs/example/report/report.md`. The smoke run compares two models and reports 18 decision results. The synthetic evaluator lets you ask whether a better predictor also makes better teams. See the [matching API](docs/matching-api.md) for custom objectives, the [data contracts](docs/data-contracts.md) for feature timing, and the [reproduction guide](docs/reproduction.md) for auditing saved runs.
+Open `runs/example/report/report.md`. The smoke run compares two models and reports 18 decision results. A completed run also writes `decision-confidence.json` with paired bootstrap intervals for decision regret, summarized in the report. The synthetic evaluator lets you ask whether a better predictor also makes better teams. See the [matching API](docs/matching-api.md) for custom objectives, the [data contracts](docs/data-contracts.md) for feature timing, and the [reproduction guide](docs/reproduction.md) for auditing saved runs.
 
 ## Why Shuach?
 

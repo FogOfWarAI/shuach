@@ -171,6 +171,10 @@ def create_run_report(run_directory, output=None):
             )
     seeds = sorted({seed for _, _, seed in expected})
     summaries = _summaries(grouped, seeds)
+    confidence_path = run / "decision-confidence.json"
+    confidence = _read(confidence_path) if confidence_path.exists() else None
+    if confidence:
+        artifacts.append({"path": confidence_path.name, "sha256": _hash(confidence_path)})
     result = {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "run": str(run),
@@ -187,6 +191,7 @@ def create_run_report(run_directory, output=None):
         ],
         "summaries": summaries,
         "decision_summaries": _summaries(decisions, seeds),
+        "decision_confidence": confidence,
         "artifacts": artifacts,
         "scope": "Read-only aggregation of saved metrics, not independent metric recomputation, retraining, checkpoint selection or hypothesis testing. Incomplete declared seed sets have no aggregate mean. Deterministic repeats are not independent evidence. Different tasks and outcome scales must not be pooled.",
     }
@@ -230,6 +235,42 @@ def create_run_report(run_directory, output=None):
             "",
             "Solver rows reuse trained scorers and are not additional training jobs. Hidden-world regret is synthetic evidence, not a real-player outcome.",
         ]
+    if confidence:
+        estimated = [
+            row for row in confidence.get("single_group_intervals", [])
+            if row.get("status") == "estimated"
+        ]
+        lines += [
+            "",
+            "## Decision-quality intervals",
+            "",
+            f"Paired seed / lobby-cluster percentile bootstrap, {confidence['replicates']} replicates.",
+            "",
+            "Condition | Model | Variant | Solver | Seeds | Mean regret | 95% CI",
+            "--- | --- | --- | --- | --- | ---: | ---:",
+        ]
+        for row in estimated:
+            low, high = row["percentile_interval"]
+            lines.append(
+                f"{' | '.join(row['identity'])} | {row['n_seed_pairs']} | "
+                f"{row['delta_first_minus_second']:.6f} | [{low:.6f}, {high:.6f}]"
+            )
+        contrasts = [c for c in confidence.get("solver_contrasts", []) if c.get("status") == "estimated"]
+        if contrasts:
+            lines += [
+                "",
+                "Exact minus random (negative favors exact):",
+                "",
+                "Condition | Model | Variant | Seeds | Δ regret | 95% CI",
+                "--- | --- | --- | --- | ---: | ---:",
+            ]
+            for row in contrasts:
+                low, high = row["percentile_interval"]
+                lines.append(
+                    f"{' | '.join(row['identity'])} | {row['n_seed_pairs']} | "
+                    f"{row['delta_first_minus_second']:.6f} | [{low:.6f}, {high:.6f}]"
+                )
+        lines += ["", "Exploratory marginal intervals; no multiple-comparison or causal claim."]
     output.mkdir(parents=True, exist_ok=True)
     for filename, content in [
         ("summary.json", json.dumps(result, indent=2, allow_nan=False) + "\n"),

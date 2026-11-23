@@ -23,17 +23,20 @@ also includes the example scripts and JSON configs used below.
 
 | To use | Install from the source directory |
 | --- | --- |
-| CPU quickstart, logistic regression, PyTorch models or assignment search | `python -m pip install -e .` |
+| CPU quickstart, catalogs, feature contracts, logistic regression or assignment search | `python -m pip install -e .` |
+| PyTorch models, neural benchmarks and `decision-benchmark` | `python -m pip install -e '.[neural]'` |
 | LightGBM benchmarks | `python -m pip install -e '.[tabular]'` |
 | TrueSkill, OpenSkill or Dota reference reconstruction | `python -m pip install -e '.[rating]'` |
 | LoL Parquet preparation | `python -m pip install -e '.[parquet]'` |
 | Research plotting | `python -m pip install -e '.[research]'` |
-| Contributor checks, including optional model tests | `python -m pip install -e '.[tabular,rating,dev]'` |
+| Contributor checks, including optional model tests | `python -m pip install -e '.[neural,tabular,rating,dev]'` |
 
 ## Complete a run without downloading data
 
 ```bash
 python examples/constrained_assignment.py
+gamematch feature-schema --profile overwatch-history
+python -m pip install -e '.[neural]'
 gamematch decision-benchmark --config examples/synthetic-smoke.json --output runs/example
 gamematch report runs/example
 ```

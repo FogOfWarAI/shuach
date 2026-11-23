@@ -29,7 +29,9 @@ from .data.history import (
     standardize_histories,
 )
 from .evaluation.multiclass import multiclass_metrics
+from .features.timing import assert_strictly_earlier, recover_availability
 from .models.history import make_history_model
+from .models.outcomes import HistoryOutcomeSpec, validate_history_batch
 from .rating_runner import evaluate_probabilities
 from .runner import code_hash, set_seed, write_json
 
@@ -117,6 +119,55 @@ def predict_logits(model, dataset, batch_size, device):
     return np.concatenate(predictions)
 
 
+def audit_history_timing(data, *, max_contract_rows=512):
+    """Enforce the published temporal contract at the real data boundary.
+
+    ``history[..., 3]`` stores ``log1p((prediction_time - available)/86400)``
+    before standardization, so inverting it recovers when each observed step
+    became available. The check covers every row, then the full
+    ``validate_history_batch`` contract (shapes, masks, targets, domain and
+    explicit availability times) is applied to a bounded sample. The strict
+    ``available < time`` rule is therefore a failing assertion on the training
+    path, not a promise that only the examples exercise.
+    """
+    history = np.asarray(data.history)
+    static = np.asarray(data.static)
+    valid = np.asarray(data.valid, dtype=bool)
+    if not np.isfinite(static).all():
+        raise ValueError("Nonfinite history or static features at the data boundary")
+    available, time = recover_availability(history, data.time)
+    observed = assert_strictly_earlier(available, time, valid)
+    n = min(int(len(time)), int(max_contract_rows))
+    spec = HistoryOutcomeSpec(
+        history_features=history.shape[-1],
+        static_features=static.shape[-1],
+        team_sizes=(history.shape[2], history.shape[2]),
+        history_length=history.shape[3],
+        outcome_labels=("loss", "draw", "win"),
+        domains=2,
+    )
+    report = validate_history_batch(
+        spec,
+        torch.from_numpy(np.ascontiguousarray(history[:n], dtype=np.float32)),
+        torch.from_numpy(np.ascontiguousarray(static[:n], dtype=np.float32)),
+        torch.from_numpy(np.ascontiguousarray(valid[:n])),
+        domain=torch.from_numpy(np.asarray(data.domain[:n], dtype=np.int64)),
+        target=torch.from_numpy(np.asarray(data.outcome[:n], dtype=np.int64)),
+        prediction_time=torch.from_numpy(np.ascontiguousarray(time[:n])),
+        history_available_at=torch.from_numpy(np.ascontiguousarray(available[:n])),
+    )
+    report.update(
+        {
+            "rows_audited_for_leakage": int(len(time)),
+            "rows_checked_against_full_contract": n,
+            "observed_steps": observed,
+            "temporal_evidence_checked": True,
+            "contract": "strict available_at < prediction_time, checked before standardization",
+        }
+    )
+    return report
+
+
 def temperature_fit(logits, outcomes):
     def objective(log_temperature):
         probability = softmax(logits / np.exp(log_temperature), axis=1)
@@ -159,6 +210,8 @@ def run_history(config_path, workspace, output):
             )
             masks[name][:] = False
             masks[name][indices] = True
+    # Audit before standardization: the feedback-age channel is raw until then.
+    timing_audit = audit_history_timing(data)
     normalizer = standardize_histories(data, masks["train"])
     datasets = {name: tensor_partition(data, mask) for name, mask in masks.items()}
     runtime = runtime_identity()
@@ -188,6 +241,7 @@ def run_history(config_path, workspace, output):
             "task": "three_class_observed_prediction",
             "evidence_type": "public_data_architecture_adaptation",
             "normalizer": normalizer,
+            "temporal_audit": timing_audit,
             "selection": "Validation NLL early stopping; validation-only scalar temperature calibration",
             "test_policy": "Frozen network and calibration; player histories receive strictly earlier completed test outcomes",
         }
@@ -204,6 +258,7 @@ def run_history(config_path, workspace, output):
             available_at=data.available_at,
             **masks,
         )
+    manifest["temporal_audit"] = timing_audit
     manifest["status"] = "running"
     write_json(path, manifest)
     try:
