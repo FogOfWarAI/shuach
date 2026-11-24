@@ -1,5 +1,24 @@
 # Change log
 
+## Unreleased — consistency review and framework design guide
+
+- Align timing evaluation across `schema.at()` and `FeatureBatch.validate()`:
+  shared key resolution (declared name or legacy feature name), scalar
+  prediction-time broadcast, per-row alignment and observed-step masking.
+  The reference encoder now applies the same visibility rule as the trainable
+  bridge, and pools only valid players.
+- Make declared behaviour honest: multi-class WDL now receives a side-sensitive
+  context with reversed labels under swap; ordered-class augmentation reverses
+  any label width; `swap_sides` flips only sided fields and never a MATCH time
+  axis; `regression` with `dim>1` and one-hot class targets are handled; TEAM
+  dense fields no longer create dead slot parameters; unimplemented `reduce`
+  values (`max`, `last`) are rejected at declaration.
+- JSON keeps raw declarations so round-trips are idempotent; `from_dict`
+  infers `dim` from labels when omitted. Add 14 consistency regression tests.
+- Add `docs/feature-framework-design.md` with an architecture diagram
+  (`docs/assets/feature-framework.svg`) explaining the flow from declaration
+  to model. 283 tests pass; coverage stays at 90%.
+
 ## Unreleased — time evaluation, structure semantics, derived behaviour
 
 - Replace the PRE/POST match binary with one predicate:

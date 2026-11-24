@@ -59,11 +59,18 @@ class SchemaEncoder(nn.Module):
         self.projections = nn.ModuleDict()
         # ORDERED structures get learnable slot embeddings so pooling keeps
         # the ordering information that a plain mean would discard.
-        ordered = [f for f in schema.features if f.resolved_structure is Structure.ORDERED]
+        # A slot table is only useful on an axis the encoder actually applies
+        # it to: the time axis of SEQUENCE fields. TEAM/DENSE fields have no
+        # ordered axis in _encode, so creating a table there yields a dead
+        # parameter that never receives a gradient.
+        ordered = [
+            f for f in schema.features
+            if f.resolved_structure is Structure.ORDERED
+            and f.modality is Modality.SEQUENCE
+        ]
         self.slot_embeddings = nn.ParameterDict()
         for spec in ordered:
-            slots = spec.steps if spec.modality is Modality.SEQUENCE else schema.sides
-            table = torch.empty(slots, dim)
+            table = torch.empty(spec.steps, dim)
             nn.init.normal_(table, 0, 0.02, generator=generator)
             self.slot_embeddings[spec.name] = nn.Parameter(table)
         for spec in schema.features:
@@ -88,7 +95,10 @@ class SchemaEncoder(nn.Module):
         """Fields legal at this batch's prediction time (single predicate)."""
         if batch.prediction_time is None:
             return tuple(self.schema.features)
-        view = self.schema.at(batch.prediction_time, batch.available_at)
+        view = self.schema.at(
+            batch.prediction_time, batch.available_at,
+            batch=batch.batch_size, masks=batch.masks,
+        )
         return view.visible
 
     def forward(self, batch: FeatureBatch) -> ModelInputs:
@@ -119,19 +129,20 @@ class SchemaEncoder(nn.Module):
 
     @property
     def uses_signed_sides(self) -> bool:
-        """Only a binary antisymmetric target has a provable sign flip.
+        """A two-sided antisymmetric target needs a side-sensitive context.
 
-        For binary left_win, ``team[:,0] - team[:,1]`` changes sign when the
-        sides swap, so a bias-free head satisfies f(swap(x)) == -f(x).
-        Multi-class WDL instead uses permutation-invariant pooling plus
-        label-reversing augmentation: negating every class logit would be
-        mathematically wrong (the draw class must stay put).
+        Binary win/loss has a provable identity: a signed difference plus a
+        bias-free head gives f(swap(x)) == -f(x). Multi-class WDL cannot negate
+        logits (the draw class must stay put), but it still must *see* the side
+        difference; the head learns the class permutation from the augmented
+        data. Symmetric / non-relational targets use permutation-invariant
+        mean pooling.
         """
         task = self.schema.task
         return (
             self.schema.sides == 2
-            and task.kind == "binary"
             and task.resolved_orientation is Orientation.ANTISYMMETRIC
+            and task.kind in {"binary", "multiclass", "ordinal"}
         )
 
     def _pool_sides(self, team):
@@ -170,17 +181,19 @@ class SchemaEncoder(nn.Module):
 def make_head(spec: OutputSpec, in_dim: int) -> nn.Module:
     """Build the output head declared by an :class:`OutputSpec`.
 
-    A binary antisymmetric target demands ``f(swap(x)) == -f(x)`` for raw
-    logits, so its head has no bias term. Other heads keep a bias.
+    An antisymmetric target receives a signed side difference, so its head
+    has no bias term (for binary this gives f(swap(x)) == -f(x); for ordered
+    classes the head learns the class permutation from augmented data).
+    Other heads keep a bias.
     """
     signed = (
-        spec.kind == "binary"
+        spec.kind in {"binary", "multiclass", "ordinal"}
         and spec.resolved_orientation is Orientation.ANTISYMMETRIC
     )
     bias = not signed
-    if spec.kind in {"binary", "regression", "assignment"}:
+    if spec.kind in {"binary", "assignment"}:
         return nn.Linear(in_dim, 1, bias=bias)
-    if spec.kind in {"multiclass", "ordinal"}:
+    if spec.kind in {"multiclass", "ordinal", "regression"}:
         return nn.Linear(in_dim, spec.dim, bias=bias)
     raise ValueError(f"Unsupported output kind: {spec.kind}")
 
@@ -201,8 +214,11 @@ def criterion_targets(spec: OutputSpec, targets, device=None):
     """Shape raw targets to match the derived loss."""
     tensor = torch.as_tensor(np.asarray(targets), device=device)
     if spec.criterion() == "cross_entropy":
+        # Accept class indices [B] or one-hot / soft labels [B, dim].
+        if tensor.ndim == 2 and tensor.shape[1] == spec.dim:
+            return tensor.argmax(dim=1).long()
         return tensor.reshape(-1).long()
-    return tensor.reshape(-1, 1).float()
+    return tensor.reshape(-1, spec.dim).float()
 
 
 def swap_sides(schema: FeatureSchema, batch: FeatureBatch):
@@ -214,22 +230,41 @@ def swap_sides(schema: FeatureSchema, batch: FeatureBatch):
     """
     if schema.sides != 2:
         raise ValueError("swap_sides requires a two-sided schema")
-    fields = {k: np.flip(np.asarray(v), axis=1).copy() for k, v in batch.fields.items()}
-    weights = {k: np.flip(np.asarray(v), axis=1).copy() for k, v in batch.weights.items()}
-    masks = {k: np.flip(np.asarray(v), axis=1).copy() for k, v in batch.masks.items()}
+    # Only fields whose canonical S axis is 2 carry side information. MATCH
+    # fields must keep their time axis untouched.
+    sided = {
+        f.name: f.scope in (Scope.TEAM, Scope.PLAYER)
+        for f in schema.features
+    }
+    fields, weights, masks = {}, {}, {}
+    for name, value in batch.fields.items():
+        arr = np.asarray(value)
+        fields[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
+    for name, value in batch.weights.items():
+        arr = np.asarray(value)
+        weights[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
+    for name, value in batch.masks.items():
+        arr = np.asarray(value)
+        masks[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
     targets = batch.targets
     orientation = schema.task.resolved_orientation
     if targets is not None and orientation is Orientation.ANTISYMMETRIC:
         t = np.asarray(targets).copy()
         if schema.task.kind == "binary":
             t = 1.0 - t
-        elif schema.task.kind in {"multiclass", "ordinal"} and schema.task.dim == 3:
-            t = 2 - t
+        elif schema.task.kind in {"multiclass", "ordinal"}:
+            # Reverse the ordered label axis: loss<->win, draw stays put for
+            # three classes; for other widths the center class is fixed.
+            t = (schema.task.dim - 1) - t
         targets = t
     timed = {}
-    for key, value in batch.available_at.items():
+    from .schema import resolve_timed_specs
+    resolved, unknown = resolve_timed_specs(schema, batch.available_at)
+    if unknown:
+        raise ValueError(f"available_at refers to unknown feature(s): {sorted(unknown)}")
+    for name, value in resolved.items():
         arr = np.asarray(value)
-        timed[key] = np.flip(arr, axis=1).copy() if arr.ndim >= 2 and arr.shape[1] == 2 else arr
+        timed[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.ndim >= 2 and arr.shape[1] == 2 else arr.copy()
     return FeatureBatch(
         schema=batch.schema, fields=fields, weights=weights, masks=masks,
         available_at=timed, prediction_time=batch.prediction_time,

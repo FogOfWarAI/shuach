@@ -4,6 +4,7 @@ include requirements-local-lock.txt
 recursive-include docs *.md
 include docs/models.bib
 include docs/assets/shuach-match.png
+include docs/assets/feature-framework.svg
 recursive-include examples *.py *.json
 recursive-include benchmarks *.json
 recursive-include tests *.py

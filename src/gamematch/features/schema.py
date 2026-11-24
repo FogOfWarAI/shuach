@@ -238,15 +238,24 @@ class FeatureSpec:
                 raise ValueError("SEQUENCE must declare an explicit validity mask")
         elif self.steps != 1:
             raise ValueError("steps > 1 is only valid for SEQUENCE")
+        # Only reductions the encoders actually implement are accepted; a
+        # declared value must never be a no-op. Both encoders sum or mean the
+        # coefficient bags and masked-mean the sequence axis.
+        # sum and mean are implemented for every modality (SEQUENCE always
+        # uses masked mean, which is the only meaningful reduction there).
+        # max/last were declared but never implemented, so reject them rather
+        # than silently returning a different reduction.
+        allowed = {"sum", "mean"}
+        if self.reduce not in allowed:
+            raise ValueError(
+                f"reduce must be one of {sorted(allowed)} for "
+                f"{self.modality.value} (got {self.reduce!r})"
+            )
         if self.modality is Modality.COEFFICIENT:
             if self.vocab_size < 2:
                 raise ValueError("COEFFICIENT needs vocab_size >= 2 (0 is the unknown token)")
-            if self.reduce not in {"sum", "mean", "max"}:
-                raise ValueError("coefficient reduce must be sum, mean or max")
         elif self.vocab_size:
             raise ValueError("vocab_size is only valid for COEFFICIENT")
-        if self.reduce not in {"sum", "mean", "max", "last"}:
-            raise ValueError("Unknown reduce")
         if self.structure is not None and not isinstance(self.structure, Structure):
             raise ValueError("structure must be a Structure member or None")
 
@@ -323,6 +332,47 @@ class OutputSpec:
         return "none"
 
 
+def resolve_timed_specs(schema, available_at):
+    """Resolve available_at keys to specs using one rule everywhere.
+
+    A timestamp key may be either the spec's declared `available_at` name or
+    the feature name itself (legacy form). Both resolve to the same spec.
+    """
+    resolved, unknown = {}, []
+    for key, times in available_at.items():
+        spec = next(
+            (f for f in schema.features if key in {f.name, f.available_at}),
+            None,
+        )
+        if spec is None:
+            unknown.append(key)
+        else:
+            resolved[spec.name] = times
+    return resolved, unknown
+
+
+def timing_violations(schema, spec, times, prediction_time, batch, mask=None):
+    """Count observed steps where available_at >= prediction_time.
+
+    Shared by `SchemaView.evaluate` and `FeatureBatch.validate` so the two can
+    never disagree on keys, row alignment, scalar broadcasting or masks.
+    """
+    pt = _values(as_array(prediction_time))
+    if len(pt) == 1:
+        pt = pt * batch                     # scalar applies to every row
+    ts = _values(as_array(times))
+    observed = [bool(v) for v in _values(mask)] if mask is not None else [True] * len(ts)
+    per_row = math.prod(schema.canonical_shape(spec, batch)[1:4])
+    bad = 0
+    for i, (t, ok) in enumerate(zip(ts, observed)):
+        row = i // per_row
+        if row >= len(pt):
+            break
+        if ok and t >= pt[row]:
+            bad += 1
+    return bad
+
+
 @dataclass(frozen=True)
 class SchemaView:
     """The observable part of a schema at one prediction time.
@@ -339,35 +389,42 @@ class SchemaView:
     schema: "FeatureSchema"
 
     @classmethod
-    def evaluate(cls, source, prediction_time, available_at):
+    def evaluate(cls, source, prediction_time, available_at, *, batch=None, masks=None):
+        """Evaluate visibility with the same rules as FeatureBatch.validate."""
+        if prediction_time is None:
+            raise ValueError("schema.at() needs a prediction_time for timed fields")
+        resolved, unknown = resolve_timed_specs(source, available_at)
+        if unknown:
+            raise ValueError(f"available_at refers to unknown feature(s): {sorted(unknown)}")
+        mask_map = dict(masks or {})
+        inferred_batch = batch
+        if inferred_batch is None:
+            for value in resolved.values():
+                shape = getattr(as_array(value), "shape", None)
+                if shape:
+                    inferred_batch = int(shape[0])
+                    break
+        inferred_batch = inferred_batch or 1
+
         visible, excluded = [], {}
         for spec in source.features:
             if not spec.available_at:
                 visible.append(spec)
                 continue
-            times = available_at.get(spec.available_at)
+            times = resolved.get(spec.name)
             if times is None:
                 # No evidence supplied -> refuse to invent visibility.
                 excluded[spec.name] = -1
                 continue
-            pt = as_array(prediction_time)
-            ts = _values(as_array(times))
-            point = _values(pt)
-            pt_value = float(point[0]) if len(point) == 1 else None
-            bad = 0
-            for i, t in enumerate(ts):
-                ref = pt_value if pt_value is not None else float(point[min(i, len(point) - 1)])
-                if t >= ref:
-                    bad += 1
+            bad = timing_violations(
+                source, spec, times, prediction_time, inferred_batch,
+                mask=mask_map.get(spec.name),
+            )
             if bad:
                 excluded[spec.name] = bad
             else:
                 visible.append(spec)
-        reduced = replace(
-            source,
-            name=source.name + "@t",
-            features=tuple(visible),
-        )
+        reduced = replace(source, name=source.name + "@t", features=tuple(visible))
         return cls(source, prediction_time, tuple(visible), excluded, reduced)
 
     @property
@@ -428,18 +485,23 @@ class FeatureSchema:
 
     # -- time evaluation ---------------------------------------------------
 
-    def at(self, prediction_time, available_at: dict | None = None):
+    def at(self, prediction_time, available_at: dict | None = None, *,
+           batch: int | None = None, masks: dict | None = None):
         """Evaluate which fields are observable at `prediction_time`.
 
-        This is the single availability predicate. Fields without an
-        `available_at` key have no temporal constraint and are always visible.
-        Timed fields are visible only where their timestamps are strictly
-        earlier than the prediction time. There is no PRE/POST binary: a
-        post-game forecast simply uses a later prediction time.
+        This is the single availability predicate, sharing its key resolution,
+        scalar broadcasting, row alignment and mask rules with
+        `FeatureBatch.validate`. Fields without an `available_at` key have no
+        temporal constraint and are always visible. Timed fields are visible
+        only where observed timestamps are strictly earlier than prediction
+        time. A post-game forecast simply uses a later prediction time.
 
         Returns a :class:`SchemaView` with the visible fields and a report.
         """
-        return SchemaView.evaluate(self, prediction_time, dict(available_at or {}))
+        return SchemaView.evaluate(
+            self, prediction_time, dict(available_at or {}),
+            batch=batch, masks=masks,
+        )
 
     # -- serialization -----------------------------------------------------
 
@@ -450,14 +512,17 @@ class FeatureSchema:
                 "name": self.task.name, "kind": self.task.kind,
                 "labels": list(self.task.labels), "dim": self.task.dim,
                 "link": self.task.link,
-                "orientation": self.task.resolved_orientation.value,
+                "orientation": (
+                    self.task.orientation.value if self.task.orientation else None
+                ),
             },
             "features": [
                 {
                     "name": f.name, "modality": f.modality.value, "scope": f.scope.value,
                     "width": f.width, "steps": f.steps, "vocab_size": f.vocab_size,
                     "mask": f.mask, "available_at": f.available_at,
-                    "structure": f.resolved_structure.value, "reduce": f.reduce,
+                    "structure": f.structure.value if f.structure else None,
+                    "reduce": f.reduce,
                     "group": f.group, "description": f.description,
                 }
                 for f in self.features
@@ -469,13 +534,18 @@ class FeatureSchema:
 
     @classmethod
     def from_dict(cls, data: dict) -> "FeatureSchema":
+        task_data = data["task"]
+        labels = tuple(task_data.get("labels", ()))
+        dim = task_data.get("dim")
+        if dim is None:
+            dim = len(labels) if labels else 1
         task = OutputSpec(
-            name=data["task"]["name"], kind=data["task"]["kind"],
-            labels=tuple(data["task"].get("labels", ())), dim=data["task"].get("dim", 1),
-            link=data["task"].get("link", "sigmoid"),
+            name=task_data["name"], kind=task_data["kind"],
+            labels=labels, dim=dim,
+            link=task_data.get("link", "sigmoid"),
             orientation=(
-                Orientation(data["task"]["orientation"])
-                if data["task"].get("orientation") else None
+                Orientation(task_data["orientation"])
+                if task_data.get("orientation") else None
             ),
             # Old `available` / `transform` keys are intentionally ignored:
             # the PRE/POST binary and the no-op transform were removed.
@@ -644,34 +714,33 @@ class FeatureBatch:
         # prediction time; post-game inputs need a later prediction time, not
         # a different field type. Labels live in OutputSpec, never in features.
         if self.prediction_time is not None:
-            pt = _values(self.prediction_time)
-            for name, times in self.available_at.items():
-                spec = next(
-                    (f for f in schema.features
-                     if name in {f.name, f.available_at}),
-                    None,
+            resolved, unknown = resolve_timed_specs(schema, self.available_at)
+            for name in unknown:
+                problems.append(f"available_at refers to unknown feature {name}")
+            for spec_name, times in resolved.items():
+                spec = next(f for f in schema.features if f.name == spec_name)
+                bad = timing_violations(
+                    schema, spec, times, self.prediction_time, batch,
+                    mask=self.masks.get(spec_name),
                 )
-                if spec is None:
-                    problems.append(f"available_at refers to unknown feature {name}")
-                    continue
-                mask = self.masks.get(spec.name)
-                ts = _values(as_array(times))
-                observed = [bool(v) for v in _values(mask)] if mask is not None else [True] * len(ts)
-                per_row = math.prod(schema.canonical_shape(spec, batch)[1:4])
-                for i, (t, ok) in enumerate(zip(ts, observed)):
-                    row = i // per_row
-                    if row >= len(pt):
-                        break
-                    if ok and t >= pt[row]:
-                        problems.append(
-                            f"{name}: feedback at {t} is not strictly earlier than "
-                            f"prediction_time {pt[row]} (row {row})"
-                        )
-                        break
-        if self.targets is not None and self.schema.task.kind not in {"regression", "assignment"}:
+                if bad:
+                    problems.append(
+                        f"{spec_name}: {bad} observed step(s) not strictly earlier "
+                        f"than prediction_time (predicate: available_at < prediction_time)"
+                    )
+        if self.targets is not None and self.schema.task.kind != "assignment":
             dim = self.schema.task.dim
             t = as_array(self.targets)
-            if not (len(t.shape) == 1 or (len(t.shape) == 2 and t.shape[1] == dim)):
+            if self.schema.task.kind == "regression":
+                if not (len(t.shape) == 1 or (len(t.shape) == 2 and t.shape[1] == dim)):
+                    problems.append(f"targets do not match OutputSpec(dim={dim})")
+            elif len(t.shape) == 1:
+                if batch != len(t):
+                    problems.append(f"targets has {len(t)} rows, expected {batch}")
+            elif len(t.shape) == 2 and t.shape[1] == dim:
+                if t.shape[0] != batch:
+                    problems.append(f"targets has {t.shape[0]} rows, expected {batch}")
+            else:
                 problems.append(f"targets do not match OutputSpec(dim={dim})")
         if problems:
             raise ValueError("Invalid FeatureBatch:\n  - " + "\n  - ".join(problems))
@@ -787,11 +856,21 @@ class FeatureEncoder:
                 rng.gauss(0, 0.02) + 0.01 * (hash(cell) % 7) for _ in range(dim)
             ]
 
+    def visible_fields(self, batch: FeatureBatch) -> tuple:
+        """Same predicate as the trainable bridge: never encode hidden fields."""
+        if batch.prediction_time is None:
+            return tuple(self.schema.features)
+        view = self.schema.at(
+            batch.prediction_time, batch.available_at,
+            batch=batch.batch_size, masks=batch.masks,
+        )
+        return view.visible
+
     def __call__(self, batch: FeatureBatch) -> ModelInputs:
         B, S, N, D = batch.batch_size, self.schema.sides, self.schema.players, self.dim
         tokens = _array((B, S, N, D), 0.0)
         context = _array((B, D), 0.0)
-        for spec in self.schema.features:
+        for spec in self.visible_fields(batch):
             local = self._encode_spec(spec, batch)          # [B,S_eff,N_eff,D]
             for b, s, n in itertools.product(range(B), range(S), range(N)):
                 ls = s if local.shape[1] > 1 else 0
@@ -813,9 +892,13 @@ class FeatureEncoder:
                     _set(valid, (b, s, n), False)
         team = _array((B, S, D), 0.0)
         for b, s in itertools.product(range(B), range(S)):
+            count = sum(1 for n in range(N) if _get(valid, (b, s, n)))
             for d in range(D):
-                total = sum(_get(tokens, (b, s, n, d)) for n in range(N))
-                _set(team, (b, s, d), total / N)
+                total = sum(
+                    _get(tokens, (b, s, n, d)) for n in range(N)
+                    if _get(valid, (b, s, n))
+                )
+                _set(team, (b, s, d), total / max(count, 1))
         return ModelInputs(tokens, valid, context, team, self.schema)
 
     def _encode_spec(self, spec, batch):
@@ -1022,7 +1105,7 @@ def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
     if with_targets:
         task = schema.task
         if task.kind == "regression":
-            targets = rng.normal(size=batch)
+            targets = rng.normal(size=(batch, task.dim))
         elif task.kind == "binary":
             targets = rng.integers(0, 2, size=batch).astype(float)
         elif task.kind in {"multiclass", "ordinal"}:
