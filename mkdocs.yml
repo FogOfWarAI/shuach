@@ -51,6 +51,7 @@ nav:
   - User guide:
       - Getting started: getting-started.md
       - Data contracts: data-contracts.md
+      - Supplying inputs: inputs.md
       - Unified feature contracts: feature-schema.md
       - Outcome models: outcome-models.md
       - Model comparisons: model-additions.md

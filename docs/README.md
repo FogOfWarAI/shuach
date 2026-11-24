@@ -23,6 +23,7 @@ Ava (6) and Bo (4) can captain a team. Cy (3) and Di (1) fill the remaining slot
 | Estimate a lineup’s win probability | [Choose a model](outcome-models.md) · [Reload a trained predictor](inference-api.md) |
 | Keep parties together and fill required roles | [Generate feasible teams](matching-api.md#generate-candidates) · [Score assignments in batches](matching-api.md#score-candidates-in-batches) |
 | Declare new input features or output heads | [Unified feature contracts](feature-schema.md) |
+| Build the arrays a schema expects | [Supplying inputs](inputs.md) · [Data contracts](data-contracts.md) |
 | Check prediction quality and compare team assignments | [Reproduce an experiment](reproduction.md) · [Evaluation API](research-api.md#evaluation) |
 
 ## Look up an interface

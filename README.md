@@ -30,7 +30,7 @@ gamematch feature-schema --profile overwatch-history
 gamematch lobby-approx --players 20 --time-budget 1
 ```
 
-See [unified feature contracts](docs/feature-schema.md) for declaring new modalities, scopes and output heads. A declared schema can be turned into a trainable model directly:
+See [unified feature contracts](docs/feature-schema.md) for declaring new modalities, scopes and output heads, and [Supplying inputs](docs/inputs.md) for the exact arrays each declaration expects. A declared schema can be turned into a trainable model directly:
 
 ```sh
 python -m pip install -e '.[neural]'

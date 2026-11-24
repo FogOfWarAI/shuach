@@ -101,6 +101,8 @@ function. This replaces the scattered `outcome_labels`, float labels,
 five-column elimination counts, standardized rating residuals and assignment
 dictionaries with one declarative object.
 
+For the array shapes, mask rules, timing arguments and error messages on the input side, see [Supplying inputs](inputs.md).
+
 ## Train a model straight from a schema
 
 With the `neural` extra installed, a declared contract becomes a trainable
