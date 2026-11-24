@@ -24,6 +24,7 @@ from .artifacts import completed_fit, fit_files, seal_artifacts, verify_completi
 from .configuration import runtime_identity, validate_matrix
 from .data.heroes import HeroRecords, HeroVocabulary, group_ids
 from .evaluation.binary import binary_metrics
+from .evaluation.decision_intervals import build_decision_confidence
 from .matching.lobby import partitions
 from .models import make_model
 from .models.tabular import hero_counts
@@ -289,4 +290,16 @@ def run_decisions(config_path, workspace, output):
         for p in sorted(output.glob("*/*/decision-metrics.json")):
             results.extend(json.loads(p.read_text()))
         write_json(output / "results.json", results)
+        if results and manifest.get("status") == "completed":
+            try:
+                write_json(
+                    output / "decision-confidence.json",
+                    build_decision_confidence(
+                        output,
+                        replicates=int(config.get("bootstrap_replicates", 1000)),
+                        seed=int(config.get("bootstrap_seed", 0)),
+                    ),
+                )
+            except (ValueError, OSError, KeyError) as exc:
+                print(f"Decision confidence unavailable: {exc}", flush=True)
     return output / "results.json"

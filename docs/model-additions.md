@@ -69,6 +69,8 @@ events and keeps it fixed during test replay.
 
 ## Sources and scope of the update
 
+The entries below cover the Set Transformer baseline, the OpenSkill library and ranking methods, and the professional League of Legends study discussed here. [Download the BibTeX file](models.bib).
+
 - **Signed hero effects.** The public Dota 2 Draft AI project reports a
   draft-only linear candidate with signed per-hero contributions and a failed
   temporal readiness check. GameMatch independently implements the shared
@@ -86,3 +88,5 @@ events and keeps it fixed during test replay.
   same-side results and first-pick information. The static hero adapter
   lacks persistent professional-team IDs and first-pick history. That
   forecasting protocol would need a separate adapter. [Preprint](https://arxiv.org/abs/2609.08060)
+
+<!-- bib: draftai settransformer openskill weng2011 guantung -->

@@ -11,5 +11,6 @@ dist/
 /datasets/
 /runs/
 /reports/
+/site/
 /.cache/
 .DS_Store

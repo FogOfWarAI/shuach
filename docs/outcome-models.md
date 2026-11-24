@@ -86,13 +86,13 @@ inputs. These fixtures verify software behavior and are not efficacy experiments
 
 ## Comparisons and paper terminology
 
+The [model bibliography](papers.md) lists the source for each research model. For OwO and DAWN, cite CUPID and CHAMP respectively and describe the history inputs and pooling used in your run.
+
+<!-- bib: cupid champ -->
+
 Compare architectures under the same input information, split, target definition
 and declared selection/calibration budgets. Compare additional history fields in
 separate information-set contrasts. A model's higher score with additional fields
 does not isolate an architecture effect. Results from different tasks must not
 share an overall ACC ranking.
 
-Suggested manuscript wording: “Outcome prediction includes roster-based, player-
-history-based and domain-conditioned estimators. Model compatibility is defined
-by the input contract; executable adapter coverage is reported separately. OwO
-and DAWN are public-data outcome-model adaptations, not isolated task categories.”

@@ -387,7 +387,7 @@ def main():
         "",
         payload["skill_limitation"],
         "",
-        "Incomplete declared seed sets are marked pending in this report and excluded from paired comparisons and manuscript tables. JSON retains explicitly flagged intermediate summaries for audit only.",
+        "Incomplete declared seed sets are marked pending in this report and excluded from paired comparisons and aggregate tables. JSON retains explicitly flagged intermediate summaries for audit only.",
         "",
         "## Prediction metrics",
         "",

@@ -17,31 +17,15 @@ Skillbench's data loader also supports a chronological split; the random split d
 
 ## Executed Skillbench interface probe
 
-The local audit (`reports/skillbench-runtime-probe.json` in the full research workspace) executes unmodified pinned source modules and the author simulator on generated fixtures, using Python 3.10 and locally available dependencies. It is not a pip installation of the author's dependency lock, a CS:GO benchmark reproduction, or a speed comparison. Python 3.10 preserves the set-sampling API used by the pinned `TeamPair` implementation. The original source and research audit are cached separately and excluded from GameMatch distributions.
+<!-- bib: skillissues -->
+
+A local audit executes unmodified pinned source modules and the author simulator on generated fixtures, using Python 3.10 and locally available dependencies. It is not a pip installation of the author's dependency lock, a CS:GO benchmark reproduction, or a speed comparison. Python 3.10 preserves the set-sampling API used by the pinned `TeamPair` implementation. The original source and research audit are cached separately and excluded from GameMatch distributions.
 
 - With the same TrueSkill 0.4.5 parameters, draw probability 0.1 and `mpmath` backend, 200 generated 5v5 events give maximum probability error `2.67e-15` and rating-state error `3.56e-14`. GameMatch's default draw probability is 0.02; default configurations are therefore not silently equated.
 - On the same 252 ordered team partitions, maximizing Skillbench's `LikeliestDrawAF` is equivalent to minimizing `abs(p-.5)` when the two win probabilities are complementary. Both interfaces attain the same optimum within `1.06e-15`; the selected candidate has zero gap under the author objective. This verifies correspondence for this specific objective, not all acquisition functions.
 - The author simulator successfully consumes 12 generated match records. Its in-sample score is retained only as a smoke check and is not presented as predictive performance.
 - On 80 overlapping generated events, an explicit external feedback queue around the author emulator matches GameMatch's delayed replay within `1.23e-15`. Updating immediately instead changes some probabilities by up to 0.205. This illustrates a protocol difference, not an error in Skillbench's distinct historical-acquisition task.
 
-The script is `scripts/verify_skillbench_reference.py`. The cached dependency/source paths and interpreter are recorded in the report. An independent installer/user reproduction and matched runtime/memory measurements remain open.
+The script is `scripts/verify_skillbench_reference.py`. The cached dependency/source paths and interpreter are recorded in the report.
 
-The recorded local invocation is:
 
-```bash
-PYTHONHASHSEED=0 PYTHONPATH=.cache/skillbench-probe-deps \
-  MPLCONFIGDIR=.cache/matplotlib \
-  .cache/python310-env/bin/python scripts/verify_skillbench_reference.py
-```
-
-It requires the separately cached fixed-source manifest and modules; the script verifies those hashes before importing them and never invokes the author's downloader. These research-cache prerequisites are not included in the source distribution.
-
-## Concrete contribution to evaluate
-
-The implemented contribution is a coherent competitive-game research workflow: seven adapter contracts; delayed outcome and future-target availability; explicit public-data model adaptations; reloadable predictors; role/party/asymmetric candidate interfaces; independent synthetic assignment evaluation; and artifact-level metric, split and source audits. Generic modularity, the use of PyTorch, a CLI, and the familiar distinction between prediction and optimization are not new algorithms.
-
-The most direct matched implementation comparison is NeuralAC against its separately cached author code. Numerical equivalence is checked before timing; dropout is disabled and attention biases are zeroed/frozen to match the paper equations. The separate search comparison holds candidates, scores, objective and tie rule fixed while changing candidate materialization. These measurements address particular implementation costs. They cannot establish that GameMatch is universally faster, more scalable, or more mature than the libraries above.
-
-## Priorities for future integration
-
-An Open Match example should preserve ticket identity, party membership, feasible roles and prediction-time availability, then measure queue/service latency separately from offline inference. A PyEPO extension should first define what feedback supplies optimization costs and how counterfactual evaluation remains independent. A recommendation/team-formation extension needs a new typed task and appropriate labels rather than reusing binary victory outcomes under a different name. These are future directions, not completed features.

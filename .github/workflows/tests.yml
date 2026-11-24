@@ -1,10 +1,10 @@
 name: CI and release
 on:
   push:
-    branches: [main, develop, release]
+    branches: [main, develop, release, dev]
     tags: ['v*']
   pull_request:
-    branches: [main, develop, release]
+    branches: [main, develop, release, dev]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,17 +23,26 @@ jobs:
           python-version: ${{ matrix.python }}
       - if: runner.os == 'macOS'
         run: brew install libomp
-      - if: runner.os == 'Linux'
-        name: Install the CPU build of PyTorch
-        run: python -m pip install 'torch>=2.2' --index-url https://download.pytorch.org/whl/cpu
-      - name: Run the base-install quickstart
+      - name: Run the base-install quickstart (no PyTorch)
         run: |
           python -m pip install .
           gamematch --version
+          gamematch doctor
+          gamematch feature-schema --profile overwatch-history
           python examples/constrained_assignment.py
+          gamematch lobby-demo --seed 0
+          gamematch lobby-approx --players 20 --time-budget 1
+      - if: runner.os == 'Linux'
+        name: Install the CPU build of PyTorch before the neural extra
+        run: python -m pip install 'torch>=2.3' --index-url https://download.pytorch.org/whl/cpu
+      - run: python -m pip install -e '.[neural,tabular,rating,dev]'
+      - name: Verify the resolved torch / NumPy pair can exchange tensors
+        run: |
+          python -c 'import numpy, torch; print("torch", torch.__version__, "numpy", numpy.__version__); x = torch.from_numpy(numpy.ones((2, 3), dtype=numpy.float32)); assert x.numpy().shape == (2, 3)'
+      - name: Run the neural-backed quickstart
+        run: |
           gamematch decision-benchmark --config examples/synthetic-smoke.json --output runs/ci-smoke
           gamematch report runs/ci-smoke
-      - run: python -m pip install -e '.[tabular,rating,dev]'
       - run: python -c 'import lightgbm, trueskill, openskill; print("Optional benchmark dependencies import successfully")'
       - run: ruff check src tests scripts examples
       - run: python -m coverage run --source=gamematch -m unittest discover -s tests -v

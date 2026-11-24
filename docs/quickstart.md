@@ -20,9 +20,10 @@ python -m venv .venv
 
 ## 实验命令
 
-在项目根目录执行，使用新的输出目录：
+在项目根目录执行，使用新的输出目录。训练命令需要可选的神经网络依赖：
 
 ```bash
+.venv/bin/python -m pip install -e '.[neural,tabular,rating]'
 .venv/bin/python scripts/run_local.py benchmark --config benchmarks/local-pilot.json --output runs/my-pilot
 .venv/bin/python scripts/run_local.py benchmark --config benchmarks/local-full-heroes.json --output runs/my-heroes
 .venv/bin/python -m gamematch rating-benchmark --config benchmarks/local-overwatch-ratings.json --output runs/my-ratings

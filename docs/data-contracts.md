@@ -4,7 +4,7 @@ An adapter declares what a record identifies, when its fields become available, 
 
 ## Task inputs and prediction targets
 
-This table describes implemented inputs, rather than every column available in a downloaded file. `B` is batch size. The machine-readable inventory is `design/task-feature-targets.json` in the research workspace. Seven real collections map to five prediction tracks; synthetic prediction and assignment evaluation are additional experiment stages.
+This table describes implemented inputs, rather than every column available in a downloaded file. `B` is batch size. The executable version of this table is the [unified feature contract](feature-schema.md); for the exact arrays, shapes and validation rules each contract expects, see [Supplying inputs](inputs.md). Seven real collections map to five prediction tracks; synthetic prediction and assignment evaluation are additional experiment stages.
 
 Task / collections | Prediction time | Model input | Target / output
 --- | --- | --- | ---

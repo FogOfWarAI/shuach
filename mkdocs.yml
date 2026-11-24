@@ -1,0 +1,72 @@
+site_name: Shuach
+site_description: Machine learning for balanced multiplayer matchmaking
+site_url: https://fogofwarai.github.io/shuach/
+repo_url: https://github.com/FogOfWarAI/shuach
+repo_name: FogOfWarAI/shuach
+edit_uri: ""
+theme:
+  name: material
+  logo: assets/shuach-match.png
+  favicon: assets/shuach-match-32.png
+  font: false
+  palette:
+    primary: custom
+    accent: deep orange
+  features:
+    - navigation.tabs
+    - navigation.top
+    - content.code.copy
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            show_source: false
+            docstring_options:
+              warnings: false
+            show_if_no_docstring: true
+            inherited_members: false
+            members_order: source
+            filters: ['!^_']
+hooks:
+  - scripts/docs_reference.py
+markdown_extensions:
+  - toc:
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
+  - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight
+  - pymdownx.superfences
+extra_css: [assets/docs.css]
+extra_javascript: [assets/api-filter.js]
+nav:
+  - Home: README.md
+  - User guide:
+      - Getting started: getting-started.md
+      - Data contracts: data-contracts.md
+      - Supplying inputs: inputs.md
+      - Unified feature contracts: feature-schema.md
+      - Outcome models: outcome-models.md
+      - Model comparisons: model-additions.md
+      - Player histories: richer-history.md
+      - Reproduction: reproduction.md
+      - Hyperparameter search: hyperparameter-search.md
+  - API reference:
+      - API index: reference/index.md
+      - Python examples: api.md
+      - Team assignment: matching-api.md
+      - Saved predictors: inference-api.md
+      - Research API: research-api.md
+      - Model cards: model-cards.md
+      - Papers and BibTeX: papers.md
+  - CLI: cli.md
+  - 中文:
+      - 中文入门: start-zh.md
+      - 中文 API: api-zh.md

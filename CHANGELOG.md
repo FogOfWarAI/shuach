@@ -1,5 +1,43 @@
 # Change log
 
+## Unreleased — unified contracts, temporal assertions, decision intervals
+
+- Bridge declarative schemas to trainable models: `SchemaEncoder` / `SchemaModel`
+  / `make_model_from_schema` apply the four-axis algebra with learnable tables
+  and build the head from `OutputSpec`. Lazy exports keep the base install
+  PyTorch-free. `sample_inputs` builds a valid batch from any schema alone.
+  `examples/schema_model.py` trains and predicts with no dataset; covers every
+  catalog profile. This connects contract -> model -> prediction; the existing
+  benchmark runners still consume their native tensors.
+- Add `gamematch.features`: declarative `FeatureSpec` / `FeatureSchema` /
+  `OutputSpec` contracts over four axes (modality, scope, side, availability),
+  one canonical `[B,S,N,T,C]` layout, boundary validation, a reference encoder
+  and JSON serialization. Every `InputProfile` now resolves to an executable
+  schema; inspect one with `gamematch feature-schema --profile NAME`. See
+  [unified feature contracts](docs/feature-schema.md).
+- Enforce `available_at < prediction_time` on the real history runner path.
+  `audit_history_timing` checks every observed step before standardization and
+  applies the full `validate_history_batch` contract to a bounded sample; the
+  result is recorded in the run manifest.
+- Report decision quality with paired seed / lobby-cluster bootstrap intervals
+  (`decision-confidence.json`, plus a section in `report.md`), including
+  exact-minus-random contrasts. Point-estimate regret is no longer the only
+  decision evidence.
+- Add anytime assignment search: `minimize_assignments_budgeted` (time and
+  candidate budgets, explicit `anytime_budget_reached` status) and
+  `local_swap_balance` (batched cross-side swaps for lobbies too large to
+  enumerate). `gamematch lobby-approx` demonstrates a 20-player case.
+- Move PyTorch to the optional `neural` extra. A base install can now run
+  `--version`, `doctor`, `feature-schema`, `lobby-demo` and `lobby-approx`
+  without downloading CUDA wheels; `models/__init__.py` re-exports lazily.
+  CI verifies the base install before installing `.[neural,tabular,rating,dev]`.
+  The `neural` extra requires `torch>=2.3` (2.2.x cannot exchange tensors with
+  NumPy 2.x), and CI asserts the resolved torch / NumPy pair before the suite.
+- Slim the documentation set: `docs/release-readiness.md` is now a build and
+  verification procedure, local validation logs and status placeholders are
+  removed, and research exporters write to `reports/`. Two single-purpose
+  export scripts were dropped from the source distribution.
+
 ## 0.1.0rc5.dev3 — roster models, rating rules and reader guides, 2026-11-21
 
 - Train and reload `signed_hero` and `set_transformer` under the existing hero-roster protocol. The first model learns an additive effect per hero. The second learns interactions within each team.
@@ -10,7 +48,7 @@
 
 - Added `gamematch --version`, a base-install CPU quickstart, a CLI reference,
   worked examples for constrained assignment and saved predictors, and
-  contributor and private-reporting instructions for the local preview.
+  contributor and private-reporting instructions.
 - Check supplied training ranges in outcome planning, including selected
   hero models' overrides. Empty fitted hero vocabularies map every ID to zero.
 - Preserve complete assignment enumeration with single-use role iterables.
@@ -84,7 +122,6 @@
 - Made the report command support every benchmark track in a dedicated output directory, preserve original artifacts, reject duplicate jobs and withhold aggregate means for incomplete seed sets. The legacy hero reporter rejects other protocols before writing.
 - Packed NeuralAC batch/side and interaction axes before dense kernels, preserving parameter names and the evaluated function while avoiding high-rank MPS overhead. Archived the previous layout and measured both against the author implementation; retained the original trained experiment artifacts.
 - Added an executable 1v4 five-outcome objective example with party preservation, and a systematic exploratory comparison under common calibration policies.
-- Prepared JMLR-style local manuscript and technical evidence artifacts; no public release, hosted CI, submission or independent adoption is claimed.
 
 ## 0.0.1 — development prototype
 

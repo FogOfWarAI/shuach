@@ -1,5 +1,7 @@
 # Shuach · 耍起
 
+[文档首页](https://fogofwarai.github.io/shuach/) · [查询 Python API](https://fogofwarai.github.io/shuach/reference/)
+
 [English](README.md) · 面向多人游戏的匹配学习与分队实验框架。项目源自 GameMatch，Python 导入名和命令行入口沿用 `gamematch`。
 
 GameMatch 是面向竞技游戏的 Python 研究库。给定一个小大厅，它可以找出满足组排和角色要求、评分最接近的两队。给定历史对局，它可以训练模型，估计新阵容的胜率或逐场更新玩家评级。当前开发版为 **0.1.0rc5.dev3**。
@@ -16,6 +18,14 @@ source .venv/bin/activate
 python -m pip install -e .
 gamematch --version
 python examples/constrained_assignment.py
+gamematch feature-schema --profile overwatch-history
+gamematch lobby-approx --players 20 --time-budget 1
+```
+
+训练与评估命令需要可选的神经网络依赖（PyTorch 已移入 `neural` 附加依赖）：
+
+```bash
+python -m pip install -e '.[neural]'
 gamematch decision-benchmark --config examples/synthetic-smoke.json --output runs/example
 gamematch report runs/example
 ```
@@ -71,7 +81,7 @@ Overwatch 的深度模型用玩家 ID 查历史，不训练玩家 ID 嵌入。DB
 
 - 读示例、查接口或贡献新页面，可以从[文档目录](docs/README.md)和[文档写作指南](docs/writing-guide.md)进入。
 - [与其他软件的关系](docs/related-software.md)：RecBole、OpeNTF、Open Match、OpenSkill、PyEPO 的互补范围。
-- [发布准备情况](docs/release-readiness.md)：本机证据、跨平台验证和公共使用方面的剩余工作。
+- [构建与验证发布包](docs/release-readiness.md)：构建 wheel/sdist、检查产物与运行测试。
 - [调参协议](docs/hyperparameter-search.md)：候选空间、指标定义、选模记录与冻结源码续跑。
 - [丰富历史指南](docs/richer-history.md)：新增输入、紧凑存储、独立数据核验和检查点推理。
 - [贡献指南](CONTRIBUTING.md)、[协作规范](CODE_OF_CONDUCT.md)、[安全问题反馈](SECURITY.md)、[更新记录](CHANGELOG.md)、[第三方说明](THIRD_PARTY.md)。
@@ -82,7 +92,7 @@ python -m coverage report
 ruff check src tests scripts examples
 ```
 
-运行上述开发检查前，请先安装 `python -m pip install -e '.[tabular,rating,dev]'`。本版的安装包验证和跨平台记录见[发布准备情况](docs/release-readiness.md)。源代码采用 [Apache-2.0](LICENSE)，数据和依赖保留各自许可。
+运行上述开发检查前，请先安装 `python -m pip install -e '.[neural,tabular,rating,dev]'`。安装包验证步骤见[构建与验证发布包](docs/release-readiness.md)。源代码采用 [Apache-2.0](LICENSE)，数据和依赖保留各自许可。
 
 ## 项目署名
 
