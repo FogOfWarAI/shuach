@@ -788,3 +788,57 @@ def predictor_schema(schema: FeatureSchema) -> FeatureSchema:
     """Drop POST_MATCH fields -- the only schema a predictor is allowed to see."""
     kept = tuple(f for f in schema.features if f.available is Availability.PRE_MATCH)
     return replace(schema, name=schema.name + "@predictor", features=kept)
+
+
+def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
+                  prediction_time: float = 1_700_000_000.0, with_targets: bool = True):
+    """Build a complete ``FeatureBatch`` of random data for any schema.
+
+    This is the fastest way to go from a declared contract to a real tensor:
+    every array is shaped from the schema itself, masks and coefficient slots
+    are filled consistently, and POST_MATCH fields become the targets while
+    PRE_MATCH fields keep a strictly earlier ``available_at``. Useful for smoke
+    tests, tutorials and checking a new adapter before wiring real data.
+
+    Args:
+        schema: The contract to sample from.
+        batch: Number of rows.
+        seed: Seed for reproducible samples.
+        prediction_time: Timestamp used for the availability check.
+        with_targets: Whether to expose the POST_MATCH fields as targets.
+
+    Returns:
+        A validated-ready ``FeatureBatch``.
+    """
+    if _np is None:
+        raise RuntimeError("sample_inputs needs numpy (included in the base install)")
+    rng = _np.random.default_rng(seed)
+    raw, available_at = {}, {}
+    for spec in schema.features:
+        shape = schema.natural_shape(spec, batch)
+        if spec.modality is Modality.COEFFICIENT:
+            values = rng.integers(1, max(2, spec.vocab_size), size=shape)
+            raw[spec.name] = values
+        else:
+            raw[spec.name] = rng.normal(size=shape)
+        if spec.mask:
+            raw[f"{spec.name}__valid"] = rng.random(shape[:-1]) < 0.85
+        if spec.available_at and spec.available is Availability.PRE_MATCH:
+            available_at[spec.name] = _np.full(shape[:-1], prediction_time - 86_400.0)
+
+    targets = None
+    post = [f for f in schema.features if f.available is Availability.POST_MATCH]
+    if with_targets and post:
+        spec = post[0]
+        shape = schema.natural_shape(spec, batch)
+        classes = max(2, schema.task.dim)
+        values = rng.integers(0, classes, size=shape)
+        targets = values[..., 0] if shape[-1] == 1 else values
+
+    return FeatureBatch.from_natural(
+        schema,
+        prediction_time=prediction_time,
+        available_at=available_at or None,
+        targets=targets,
+        **raw,
+    )

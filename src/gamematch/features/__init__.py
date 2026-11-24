@@ -24,6 +24,7 @@ from .schema import (
     OutputSpec,
     Scope,
     predictor_schema,
+    sample_inputs,
 )
 
 __all__ = [
@@ -36,6 +37,28 @@ __all__ = [
     "ModelInputs",
     "Modality",
     "OutputSpec",
+    "SchemaEncoder",
+    "SchemaModel",
     "Scope",
+    "make_head",
+    "make_model_from_schema",
     "predictor_schema",
+    "sample_inputs",
 ]
+
+# Trainable bridge needs the optional `neural` extra. Keep it lazy so a base
+# installation can still import this package and use the contract layer.
+_TRAINABLE = {
+    "SchemaEncoder",
+    "SchemaModel",
+    "make_head",
+    "make_model_from_schema",
+}
+
+
+def __getattr__(name):
+    if name in _TRAINABLE:
+        from . import torch_bridge
+
+        return getattr(torch_bridge, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,6 +2,13 @@
 
 ## Unreleased — unified contracts, temporal assertions, decision intervals
 
+- Bridge declarative schemas to trainable models: `SchemaEncoder` / `SchemaModel`
+  / `make_model_from_schema` apply the four-axis algebra with learnable tables
+  and build the head from `OutputSpec`. Lazy exports keep the base install
+  PyTorch-free. `sample_inputs` builds a valid batch from any schema alone.
+  `examples/schema_model.py` trains and predicts with no dataset; covers every
+  catalog profile. This connects contract -> model -> prediction; the existing
+  benchmark runners still consume their native tensors.
 - Add `gamematch.features`: declarative `FeatureSpec` / `FeatureSchema` /
   `OutputSpec` contracts over four axes (modality, scope, side, availability),
   one canonical `[B,S,N,T,C]` layout, boundary validation, a reference encoder

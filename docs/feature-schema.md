@@ -101,12 +101,50 @@ function. This replaces the scattered `outcome_labels`, float labels,
 five-column elimination counts, standardized rating residuals and assignment
 dictionaries with one declarative object.
 
+## Train a model straight from a schema
+
+With the `neural` extra installed, a declared contract becomes a trainable
+model in three lines. `SchemaModel` applies the same four-axis algebra as the
+reference encoder, but with learnable tables and projections, and builds the
+output head from `OutputSpec`:
+
+```python
+from gamematch.features import SCHEMAS, make_model_from_schema, sample_inputs
+
+schema = SCHEMAS["overwatch_history"]       # or your own FeatureSchema
+model = make_model_from_schema(schema, dim=16)
+batch = sample_inputs(schema, batch=32)     # or FeatureBatch.from_natural(...)
+logits = model(batch)                        # [B, 1] or [B, num_labels]
+probs = model.predict_proba(batch)           # link applied for inference
+```
+
+`synopsis`: a runnable version with a training loop is in
+`examples/schema_model.py` — it works with no dataset and covers every
+catalog profile:
+
+```bash
+python examples/schema_model.py --profile hero-roster --steps 20
+```
+
+The contract stays PyTorch-free: `gamematch.features` imports on a base
+install, and only `SchemaModel` / `SchemaEncoder` / `make_model_from_schema` /
+`make_head` require the `neural` extra.
+
+## Generate sample data from any contract
+
+`sample_inputs(schema, batch, seed=...)` builds a valid `FeatureBatch` from a
+schema alone — natural shapes, masks, coefficient slots and strict
+`available_at < prediction_time` are all filled consistently. Use it for smoke
+tests, tutorials, or to validate a new adapter before wiring real data. Swap
+it for `FeatureBatch.from_natural(schema, ...)` once your loader is ready.
+
 ## Migration status and limits
 
-- The contract layer is complete and wired to the catalog. **The existing
-  runners still consume their native tensors**; `FeatureEncoder` is a
-  deterministic reference encoder, not yet a trained `torch.nn.Module`. Migrate
-  one model at a time with a regression comparison before switching a track.
+- The contract layer and a trainable bridge are complete and wired to the
+  catalog. The `SchemaModel` path is ready for new tracks and demos. The
+  **existing benchmark runners still consume their native tensors**; they have
+  not been switched to `SchemaModel`. Migrate one track at a time with a
+  regression comparison before treating results as equivalent.
 - `SCHEMAS` covers all six catalog profiles plus `synthetic_world` and
   `decision_assignment`. Widths mirror the current adapters (5/13 history
   channels, 114 heroes); changing an adapter requires updating its spec.
