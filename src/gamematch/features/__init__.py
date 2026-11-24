@@ -3,13 +3,15 @@
 
 """Declarative, executable input/output contracts for Shuach benchmark tracks.
 
-Four orthogonal axes -- Modality (coefficient / dense / sequence), Scope
-(match / team / player), Side (1 or 2) and Availability (pre/post match) --
-are lifted into one canonical ``[B, S, N, T, C]`` layout. Every model consumes
-the same ``ModelInputs`` interface; every head is declared by ``OutputSpec``.
+Modality (coefficient / dense / sequence), Scope (match / team / player), Side
+(1 or 2) and Structure (set / ordered / single) are lifted into one canonical
+``[B, S, N, T, C]`` layout. Availability has exactly one predicate:
+``available_at < prediction_time``, evaluated by ``FeatureSchema.at(t)``.
+Every model consumes the same ``ModelInputs`` interface; the head, loss and
+side-swap semantics are all derived from ``OutputSpec``.
 
 This package has no PyTorch dependency, so catalog and validation code can be
-used from a lightweight base installation.
+used from a lightweight base installation; trainable exports are lazy.
 """
 
 from .schema import (
@@ -21,8 +23,11 @@ from .schema import (
     FeatureSpec,
     Modality,
     ModelInputs,
+    Orientation,
     OutputSpec,
+    SchemaView,
     Scope,
+    Structure,
     predictor_schema,
     sample_inputs,
 )
@@ -36,14 +41,19 @@ __all__ = [
     "FeatureSpec",
     "ModelInputs",
     "Modality",
+    "Orientation",
     "OutputSpec",
     "SchemaEncoder",
     "SchemaModel",
+    "SchemaView",
     "Scope",
+    "Structure",
+    "make_criterion",
     "make_head",
     "make_model_from_schema",
     "predictor_schema",
     "sample_inputs",
+    "swap_sides",
 ]
 
 # Trainable bridge needs the optional `neural` extra. Keep it lazy so a base
@@ -51,8 +61,10 @@ __all__ = [
 _TRAINABLE = {
     "SchemaEncoder",
     "SchemaModel",
+    "make_criterion",
     "make_head",
     "make_model_from_schema",
+    "swap_sides",
 }
 
 

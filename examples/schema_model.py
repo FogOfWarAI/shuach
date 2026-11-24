@@ -57,37 +57,24 @@ def main(argv=None):
     train = sample_inputs(schema, batch=16, seed=args.seed)
     test = sample_inputs(schema, batch=8, seed=args.seed + 1)
 
-    # Targets come from the batch when a POST_MATCH feature provides them,
-    # otherwise from the OutputSpec declaration (most schemas have no label
-    # feature -- the target is an external column in real benchmarks).
-    def labels(batch):
-        if batch.targets is not None:
-            return batch.targets
-        n = batch.batch_size
-        if task.kind == "binary":
-            return (torch.arange(n) % 2).float().numpy()
-        if task.kind in {"multiclass", "ordinal"}:
-            return (torch.arange(n) % max(2, task.dim)).numpy()
-        return (torch.arange(n) % 5).astype("float32") / 5.0
-
-    if task.kind == "binary":
-        loss_fn = torch.nn.BCEWithLogitsLoss()
-        y = torch.as_tensor(labels(train), dtype=torch.float32).reshape(-1, 1)
-    elif task.kind in {"multiclass", "ordinal"}:
-        loss_fn = torch.nn.CrossEntropyLoss()
-        y = torch.as_tensor(labels(train), dtype=torch.int64).reshape(-1)
-    else:
-        loss_fn = torch.nn.MSELoss()
-        y = torch.as_tensor(labels(train), dtype=torch.float32).reshape(-1, 1)
+    # The loss and target shape are derived from OutputSpec -- no switch here.
+    if task.criterion() == "none":
+        raise SystemExit(
+            f"{schema.name} declares an assignment head with no canonical loss; "
+            "supply an objective explicitly (see docs/feature-schema.md)."
+        )
+    loss_fn = model.criterion()
+    y = model.targets(train)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
-    print(f"schema={schema.name} task={task.kind}/{task.link} features={len(schema.features)}")
+    print(f"schema={schema.name} task={task.kind}/{task.link} "
+          f"criterion={task.criterion()} orientation={task.resolved_orientation.value} "
+          f"features={len(schema.features)}")
     print(f"trainable params={sum(p.numel() for p in model.parameters()):,}")
     model.train()
     for step in range(args.steps):
         optimizer.zero_grad()
-        logits = model(train)
-        loss = loss_fn(logits, y)
+        loss = loss_fn(model(train), y)
         loss.backward()
         optimizer.step()
         if step == 0 or step == args.steps - 1:

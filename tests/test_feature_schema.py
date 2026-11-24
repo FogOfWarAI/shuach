@@ -11,7 +11,6 @@ import numpy as np
 from gamematch.catalog import PROFILES, feature_schema_for
 from gamematch.features import (
     SCHEMAS,
-    Availability,
     FeatureBatch,
     FeatureEncoder,
     FeatureSchema,
@@ -63,9 +62,9 @@ class CanonicalLayoutTests(unittest.TestCase):
         for name, schema in SCHEMAS.items():
             with self.subTest(schema=name):
                 batch = FeatureBatch.from_natural(schema, **sample_batch(schema))
-                post = any(f.available is Availability.POST_MATCH for f in schema.features)
-                report = batch.validate(strict_time=not post)
+                report = batch.validate()
                 self.assertEqual(report["features"], len(schema.features))
+                self.assertEqual(report["criterion"], schema.task.criterion())
                 for spec in schema.features:
                     self.assertEqual(
                         tuple(batch.fields[spec.name].shape),
@@ -133,14 +132,21 @@ class ContractFailureTests(unittest.TestCase):
         )
         self.assertTrue(batch.validate()["temporal_evidence_checked"])
 
-    def test_post_match_feature_blocked_from_predictor(self):
+    def test_post_game_inputs_stay_inputs_at_a_post_game_prediction_time(self):
+        """Post-game is a property of t, not a field tag: dota snapshots stay."""
         schema = SCHEMAS["dota_future_rating"]
         batch = FeatureBatch.from_natural(schema, **sample_batch(schema))
-        with self.assertRaisesRegex(ValueError, "POST_MATCH"):
-            batch.validate()
+        batch.validate()  # no PRE/POST binary: a legal input batch
         clean = predictor_schema(schema)
-        self.assertEqual(len(clean.features), len(schema.features) - 1)
-        self.assertNotIn("snapshots", [f.name for f in clean.features])
+        self.assertEqual(len(clean.features), len(schema.features))
+        self.assertIn("snapshots", [f.name for f in clean.features])
+
+        timed = np.full((3, 1, 1, 12), 1_700_000_000.0)
+        post = schema.at(1_700_000_100.0, {"snapshots_available_at": timed})
+        self.assertIn("snapshots", post.field_names)
+        pre = schema.at(1_699_999_900.0, {"snapshots_available_at": timed})
+        self.assertIn("snapshots", pre.excluded)
+        self.assertEqual(pre.report()["predicate"], "available_at < prediction_time")
 
     def test_bad_natural_shape_names_the_expected_shape(self):
         schema = SCHEMAS["hero_binary"]
@@ -156,10 +162,26 @@ class SerializationTests(unittest.TestCase):
                 restored = FeatureSchema.from_dict(json.loads(schema.to_json()))
                 self.assertEqual(restored.cells(), schema.cells())
                 self.assertEqual(restored.task.kind, schema.task.kind)
+                self.assertEqual(restored.task.resolved_orientation, schema.task.resolved_orientation)
                 self.assertEqual(
-                    [f.available for f in restored.features],
-                    [f.available for f in schema.features],
+                    [f.available_at for f in restored.features],
+                    [f.available_at for f in schema.features],
                 )
+                self.assertEqual(
+                    [f.resolved_structure for f in restored.features],
+                    [f.resolved_structure for f in schema.features],
+                )
+
+    def test_legacy_json_with_deprecated_keys_still_loads(self):
+        schema = SCHEMAS["overwatch_history"]
+        payload = json.loads(schema.to_json())
+        payload["task"]["available"] = "post_match"
+        for feature in payload["features"]:
+            feature["available"] = "pre_match"
+            feature["transform"] = "standardize"
+        restored = FeatureSchema.from_dict(payload)
+        self.assertEqual(restored.cells(), schema.cells())
+        self.assertEqual([f.name for f in restored.features], [f.name for f in schema.features])
 
     def test_invalid_spec_rejected_at_declaration_time(self):
         with self.assertRaises(ValueError):

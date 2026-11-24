@@ -1,5 +1,23 @@
 # Change log
 
+## Unreleased — time evaluation, structure semantics, derived behaviour
+
+- Replace the PRE/POST match binary with one predicate:
+  ``FeatureSchema.at(t)`` evaluates ``available_at < prediction_time`` and
+  returns the observable fields. Post-game inputs (Dota snapshots) stay legal
+  inputs for a post-game prediction time instead of being deleted by
+  ``predictor_schema``. Labels are declared only by ``OutputSpec``.
+- Add ``Structure`` (set / ordered / single) so pooling is derived from the
+  inductive bias: ordered sequences get learnable slot embeddings, and
+  ``OutputSpec.orientation`` drives signed side pooling plus bias-free heads
+  for binary win/loss and side-swap augmentation with label reversal.
+- Derive the loss and target shape from ``OutputSpec`` via ``model.criterion()``
+  / ``model.targets()``; examples no longer contain a loss switch.
+- Remove the declared-but-unused ``transform`` field. Old JSON configs with
+  ``available`` / ``transform`` keys still load; the keys are ignored.
+- Fix natural-shaped mask lifting so all nine modality x scope cells work,
+  including MATCH x SEQUENCE. 269 tests pass; coverage stays at 90%.
+
 ## Unreleased — unified contracts, temporal assertions, decision intervals
 
 - Bridge declarative schemas to trainable models: `SchemaEncoder` / `SchemaModel`

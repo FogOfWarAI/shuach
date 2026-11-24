@@ -13,7 +13,8 @@ executable contract. It depends only on NumPy.
 | Modality | `COEFFICIENT`, `DENSE`, `SEQUENCE` | ID-keyed sparse coefficients, fixed-width floats, and masked ordered time steps need different encoders. |
 | Scope | `MATCH`, `TEAM`, `PLAYER` | The individual/team split needs a third level for map, mode, domain, lobby and prediction time. |
 | Side | `sides = 1` or `2` | Two-sided matchmaking and single-sided tasks (predator, focal player) must never silently mix. |
-| Availability | `PRE_MATCH`, `POST_MATCH`, `available_at` | Leakage prevention becomes a failing assertion instead of a paragraph of prose. |
+| Timing | `available_at` + `schema.at(t)` | One predicate (`available_at < prediction_time`) replaces a fragile PRE/POST tag; "post-game" is a property of the prediction time, not of a field. |
+| Structure | `SET`, `ORDERED`, `SINGLE` | Declares the inductive bias so pooling and side-swap augmentation are derived, not hand-coded. |
 
 ## One canonical layout
 
@@ -40,7 +41,7 @@ coefficient vocabulary bounds, post-match isolation and strict
 
 ```python
 from gamematch.features import (
-    FeatureSchema, FeatureSpec, OutputSpec, Modality, Scope, Availability,
+    FeatureSchema, FeatureSpec, OutputSpec, Modality, Scope, Structure,
 )
 
 schema = FeatureSchema(
@@ -89,9 +90,12 @@ inputs = FeatureEncoder(schema, dim=32)(batch)
 # inputs.match_context [B,D], inputs.team_context [B,S,D]
 ```
 
-`predictor_schema(schema)` drops every `POST_MATCH` field — for example the
-Dota snapshot features, which the source dataset explicitly declares as
-post-game and therefore invalid for pre-match prediction.
+`schema.at(prediction_time, available_at)` is the single availability
+predicate: it returns the fields observable at `t`. A post-game forecast (Dota
+future rating) sets a later prediction time and keeps its snapshot inputs; a
+pre-match prediction excludes them. Labels live in `OutputSpec`, never among
+the features. `predictor_schema(schema)` is a legacy alias that keeps all
+fields unless a prediction time is supplied.
 
 ## Output contracts
 
@@ -150,8 +154,11 @@ it for `FeatureBatch.from_natural(schema, ...)` once your loader is ready.
 - `SCHEMAS` covers all six catalog profiles plus `synthetic_world` and
   `decision_assignment`. Widths mirror the current adapters (5/13 history
   channels, 114 heroes); changing an adapter requires updating its spec.
-- `MATCH × SEQUENCE` and `TEAM × SEQUENCE` are unoccupied cells, not
-  unsupported cases — the layout and validator handle them.
+- All nine (modality × scope) cells are exercised by tests, including
+  `MATCH × SEQUENCE`; natural-shaped masks are lifted to canonical `[B,S,N,T]`.
+- A binary `ANTISYMMETRIC` target has a provable sign flip under side swap
+  (signed pooling + bias-free head). Multi-class WDL uses label-reversing
+  augmentation instead; negating every class logit would be incorrect.
 - Synthetic decision intervals are exploratory marginal intervals. They do not
   fix the deeper limitation that oracle regret and training labels come from
   the same hidden generator.

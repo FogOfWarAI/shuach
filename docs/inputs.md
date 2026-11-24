@@ -13,7 +13,13 @@ Every input is placed by four independent declarations on its `FeatureSpec`:
 | `modality` | `COEFFICIENT`, `DENSE`, `SEQUENCE` | How channels are interpreted and encoded |
 | `scope` | `MATCH`, `TEAM`, `PLAYER` | Which of the side / player axes are present |
 | side count | `schema.sides` = 1 or 2 | Whether a side axis exists at all |
-| `available` / `available_at` | `PRE_MATCH` / `POST_MATCH`, optional timestamp key | Whether a field may enter a predictor, and the timing assertion |
+| `structure` | `SET`, `ORDERED`, `SINGLE` | Inductive bias: pooling and side-swap symmetry |
+| `available_at` | timestamp key, or `None` | The single timing predicate (see below) |
+
+There is **no PRE/POST binary**. Availability has exactly one predicate:
+`available_at < prediction_time`, evaluated by `schema.at(t)`. `available_at=None`
+means a static field with no temporal constraint. Labels are declared by
+`OutputSpec` and never appear among the features.
 
 The canonical shape is always `[B, S, N, T, C]` — batch, sides, players per side, time steps, channels. Axes that do not apply collapse to 1:
 
@@ -103,25 +109,65 @@ batch = FeatureBatch.from_natural(schema, **raw)
 
 Masked steps are ignored by the encoder and by pooling. Sequences are typically right-aligned with missing steps masked — keep that convention consistent. The reference encoder reduces a sequence by masked mean; `reduce=last` is available for declarations that need it.
 
-## Timing, availability and targets
+## Timing: one predicate, not a binary tag
 
-Predictors may only see `PRE_MATCH` fields. `POST_MATCH` fields are labels: `validate()` raises if one enters a predictor batch. `predictor_schema(schema)` returns a copy with those fields removed.
+"Post-game" describes **when you predict**, not a kind of field. A post-game
+forecast (Dota future rating) legitimately uses post-game snapshots as inputs;
+a pre-match prediction does not. Both are expressed by the same rule:
 
-If a spec declares `available_at`, pass a matching timestamp array or key:
+```python
+view = schema.at(prediction_time, available_at)
+print(view.field_names)      # fields observable at t
+print(view.excluded)         # field -> count of violating steps
+visible_schema = view.schema # reduced schema, ready to build a model
+```
+
+- `available_at=None` on a spec → no temporal constraint, always visible.
+- `available_at="some_key"` → the batch must provide that timestamp array, and
+  every observed step must satisfy `available_at < prediction_time` (strict).
+- `predictor_schema(schema)` is a legacy alias; with no arguments it keeps all
+  fields. Pass `prediction_time` to get the same evaluation as `at(t)`.
+
+At batch level:
 
 ```python
 batch = FeatureBatch.from_natural(
     schema,
-    prediction_time=prediction_time,          # scalar UTC seconds, or [B] array
-    available_at={"history": history_available_at},   # shape matches the field minus its channel axis
+    prediction_time=prediction_time,                       # scalar UTC seconds, or [B]
+    available_at={"history_available_at": times},           # key = spec.available_at
     **raw,
 )
-batch.validate()   # asserts available_at < prediction_time for every observed step; strict <
+batch.validate()   # asserts strict < for every observed step
 ```
 
-Equality is not enough: feedback tied exactly to the prediction time is rejected. If your data has no timestamps, omit `available_at` and do not declare `available_at` on the spec — the validator then skips that check, but you lose the leakage guard.
+The key of `available_at` is the **name declared on the spec** (for
+`overwatch_history` that is `history_available_at`, not `history`). An older
+form keyed by the feature name is still accepted. Equality is not enough:
+feedback tied exactly to the prediction time is rejected.
 
-`targets` are independent of input fields. Pass them as the `targets=` argument; they are not encoded and never enter `ModelInputs`.
+Targets are separate: pass them as `targets=`, derived from `OutputSpec` by
+`sample_inputs`. They are never encoded and never enter `ModelInputs`.
+
+## Structure and orientation
+
+`structure` declares the inductive bias of a scope's member axis; it is
+inferred when omitted (`MATCH` → `SINGLE`, `TEAM` → `ORDERED`, `PLAYER` → `SET`).
+
+| `structure` | Meaning | Effect in `SchemaModel` |
+| --- | --- | --- |
+| `SET` | exchangeable members (hero roster) | permutation-invariant masked-mean pooling |
+| `ORDERED` | ordered slots (timeline, side order) | learnable slot embeddings before pooling |
+| `SINGLE` | one entity (map, mode) | no pooling |
+
+`OutputSpec.orientation` declares what swapping the two sides does to the
+label. `ANTISYMMETRIC` (win/loss) uses a signed side difference and a bias-free
+head, so `f(swap(x)) == -f(x)`, and `model.augmented_batch(batch)` flips labels
+accordingly. `SYMMETRIC` and `NONE` use permutation-invariant pooling. For
+three-class WDL, augmentation reverses the class order rather than negating
+logits.
+
+`model.criterion()` and `model.targets(batch)` derive the loss and target shape
+from `OutputSpec` — no hand-written `BCEWithLogits` / `CrossEntropy` switch.
 
 ## The fastest path: generate a batch from a schema
 
@@ -159,7 +205,7 @@ Gradients reach every declared feature. See [Unified feature contracts](feature-
 | `overwatch_history` | 2 × 6 | `history` (seq/player 10×5), `static` (dense/player 13), `target_mode` (coef/match, vocab 2) | multiclass, 3 labels |
 | `league_history` | 2 × 5 | `history` (seq/player 10×5), `static` (dense/player 13) | binary |
 | `dbd_predator` | 1 × 1 | `environment_id` (coef/match, vocab 16), `avatar_id` (coef/match, vocab 32), `history_numeric` (dense/match, w9) | ordinal, 5 labels |
-| `dota_future_rating` | 1 × 1 | `snapshots` (seq/player 12×6, POST_MATCH), `lineups` (coef/team 5, vocab 114), `current_mean` (dense/match) | regression |
+| `dota_future_rating` | 1 × 1 | `snapshots` (seq/player 12×6, ORDERED, timed), `lineups` (coef/team 5, vocab 114), `current_mean` (dense/match) | regression |
 | `synthetic_world` | 2 × 5 | `participant_id` (coef/player, vocab 101) | binary |
 | `decision_assignment` | 2 × 5 | `lobby` (coef/match, w10, vocab 101) | assignment |
 
@@ -177,8 +223,9 @@ Catalog profile names differ from schema keys (`hero-roster` → `hero_binary`, 
 | --- | --- | --- |
 | `expected natural shape ..., got ...` | Wrong array rank or axis order | Compare with `schema.natural_shape(spec, B)`; a trailing `C=1` axis may be omitted |
 | `Missing feature array` | A declared field was not supplied | Pass every `spec.name`, plus `name__valid` for masked fields |
-| `POST_MATCH feature entered a predictor batch` | A label was passed as an input | Use `predictor_schema(schema)` or `validate(strict_time=False)` for an audit batch |
-| `available_at must be strictly earlier` | Feedback tied to or after prediction time | Shift timestamps back, or fix the prediction time; `<` is strict |
+| `...__valid expects natural mask shape ...` | Mask given in the wrong rank | Mask shape is the field's natural shape minus the channel axis, e.g. `[B,T]` for MATCH × SEQUENCE |
+| `available_at refers to unknown feature` | Timestamp key matches no spec | Use `spec.available_at` as the key, not an arbitrary name |
+| `feedback at ... is not strictly earlier` | Feedback tied to or after prediction time | Shift timestamps back, or set a later `prediction_time` for a post-game task; `<` is strict |
 | `index ... outside vocabulary` | Coefficient ID ≥ `vocab_size` | Use `0` for unknown/padding; raise `vocab_size` only if the data really needs it |
 | `steps > 1 is only valid for SEQUENCE` | Non-sequence field declares multiple steps | Move the time axis into a `SEQUENCE` spec with `mask=True` |
 | `SchemaModel ... requires the neural extra` | Trainable bridge used on a base install | `python -m pip install -e '.[neural]'` |

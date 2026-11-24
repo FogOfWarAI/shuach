@@ -33,9 +33,14 @@ DESIGN: FOUR ORTHOGONAL AXES
   Side       layout.sides: 2 for two-sided matchmaking, 1 for single-sided
              tasks (DBD predator, Dota focal player). Kept explicit so left /
              right information can never silently mix.
-  Time       Availability PRE_MATCH / POST_MATCH plus an optional
-             `available_at` timestamp field. Leakage check becomes a failed
-             assertion instead of a paragraph in the docs.
+  Time       One predicate only: a field's `available_at` timestamps must be
+             strictly earlier than `prediction_time`. There is no PRE/POST
+             binary -- "post-game" is a property of the task's prediction time,
+             not of a field, so post-game inputs remain legal inputs. Labels
+             are declared by OutputSpec and never appear among the features.
+  Structure  SET | ORDERED | SINGLE. Describes the inductive bias of a scope:
+             whether members are exchangeable, ordered, or a single entity.
+             This drives pooling and side-swap augmentation in the model.
 
 CANONICAL LAYOUT
 ----------------
@@ -88,9 +93,10 @@ except ImportError:  # contract layer must work without a numerical library
     _np = None
 
 __all__ = [
-    "Modality", "Scope", "Availability", "FeatureSpec", "OutputSpec",
-    "FeatureSchema", "FeatureBatch", "ModelInputs", "FeatureEncoder",
-    "SCHEMAS", "predictor_schema",
+    "Modality", "Scope", "Structure", "Orientation", "Availability",
+    "FeatureSpec", "OutputSpec", "FeatureSchema", "FeatureBatch",
+    "ModelInputs", "FeatureEncoder", "SCHEMAS", "predictor_schema",
+    "sample_inputs",
 ]
 
 
@@ -110,6 +116,24 @@ class Scope(str, Enum):
     PLAYER = "player"
 
 
+class Structure(str, Enum):
+    """Inductive bias of a scope's member axis; drives pooling and augmentation."""
+
+    SET = "set"            # exchangeable members -> permutation-invariant pooling
+    ORDERED = "ordered"    # ordered slots (roles, timeline) -> position-aware pooling
+    SINGLE = "single"      # one entity -> no pooling
+
+
+class Orientation(str, Enum):
+    """How a two-sided target behaves when the sides are swapped."""
+
+    ANTISYMMETRIC = "antisymmetric"   # left_win: swapping sides flips the label
+    SYMMETRIC = "symmetric"           # e.g. balance / fairness: label unchanged
+    NONE = "none"                     # single-sided or non-relational target
+
+
+# Deprecated: kept only so old JSON configs keep loading. The PRE/POST binary
+# is no longer a predicate anywhere in validation, encoding or model building.
 class Availability(str, Enum):
     PRE_MATCH = "pre_match"
     POST_MATCH = "post_match"
@@ -189,12 +213,13 @@ class FeatureSpec:
     steps: int = 1                               # T: >1 only for SEQUENCE
     vocab_size: int = 0                          # required by COEFFICIENT
     mask: bool = False                           # explicit validity mask
-    available: Availability = Availability.PRE_MATCH
-    available_at: str | None = None              # timestamp field name in batch
+    available_at: str | None = None              # timestamp field name in batch;
+                                                 # None = no temporal constraint
+    structure: Structure | None = None           # None -> inferred from scope
     reduce: str = "sum"                          # coef: sum|mean|max; seq: mean|last
-    transform: str = "identity"                  # identity|log1p|standardize|onehot
     group: str = ""                              # semantic group, for ablations
     description: str = ""
+    available: Availability | None = None        # DEPRECATED, ignored everywhere
 
     def __post_init__(self):
         if not self.name or not isinstance(self.name, str):
@@ -222,13 +247,28 @@ class FeatureSpec:
             raise ValueError("vocab_size is only valid for COEFFICIENT")
         if self.reduce not in {"sum", "mean", "max", "last"}:
             raise ValueError("Unknown reduce")
-        if self.transform not in {"identity", "log1p", "standardize", "onehot"}:
-            raise ValueError("Unknown transform")
+        if self.structure is not None and not isinstance(self.structure, Structure):
+            raise ValueError("structure must be a Structure member or None")
 
     @property
     def key(self) -> tuple[str, str]:
         """The (modality, scope) cell of the design matrix."""
         return (self.modality.value, self.scope.value)
+
+    @property
+    def resolved_structure(self) -> Structure:
+        """Infer the inductive bias when a spec does not declare one.
+
+        Players in a side are exchangeable unless they occupy ordered slots;
+        match-level context is a single entity; teams are ordered by side.
+        """
+        if self.structure is not None:
+            return self.structure
+        if self.scope is Scope.MATCH:
+            return Structure.SINGLE
+        if self.scope is Scope.TEAM:
+            return Structure.ORDERED
+        return Structure.SET
 
 
 @dataclass(frozen=True)
@@ -240,7 +280,8 @@ class OutputSpec:
     labels: tuple[str, ...] = ()
     dim: int = 1
     link: str = "sigmoid"
-    available: Availability = Availability.POST_MATCH
+    orientation: Orientation | None = None       # None -> inferred from kind
+    available: Availability | None = None        # DEPRECATED, ignored everywhere
 
     def __post_init__(self):
         kinds = {"binary", "multiclass", "ordinal", "regression", "assignment"}
@@ -257,6 +298,89 @@ class OutputSpec:
                 raise ValueError("dim must equal the number of labels")
         if self.kind == "binary" and self.labels and len(self.labels) != 2:
             raise ValueError("A binary head needs either no labels or exactly two")
+        if self.orientation is not None and not isinstance(self.orientation, Orientation):
+            raise ValueError("orientation must be an Orientation member or None")
+
+    @property
+    def resolved_orientation(self) -> Orientation:
+        """Win/loss-style targets flip when the two sides are swapped."""
+        if self.orientation is not None:
+            return self.orientation
+        if self.kind == "binary":
+            return Orientation.ANTISYMMETRIC
+        if self.kind in {"multiclass", "ordinal"}:
+            return Orientation.ANTISYMMETRIC
+        return Orientation.NONE
+
+    def criterion(self) -> str:
+        """The canonical loss name for this head; consumed by the torch bridge."""
+        if self.kind == "binary":
+            return "bce_with_logits"
+        if self.kind in {"multiclass", "ordinal"}:
+            return "cross_entropy"
+        if self.kind == "regression":
+            return "mse"
+        return "none"
+
+
+@dataclass(frozen=True)
+class SchemaView:
+    """The observable part of a schema at one prediction time.
+
+    `fields` are the specs that are legal inputs at this time. `excluded` maps
+    a timed field to the number of observed steps that violate `t < pt`.
+    `schema` is the reduced FeatureSchema, ready to build a model or a batch.
+    """
+
+    source: "FeatureSchema"
+    prediction_time: object
+    visible: tuple[FeatureSpec, ...]
+    excluded: dict[str, int]
+    schema: "FeatureSchema"
+
+    @classmethod
+    def evaluate(cls, source, prediction_time, available_at):
+        visible, excluded = [], {}
+        for spec in source.features:
+            if not spec.available_at:
+                visible.append(spec)
+                continue
+            times = available_at.get(spec.available_at)
+            if times is None:
+                # No evidence supplied -> refuse to invent visibility.
+                excluded[spec.name] = -1
+                continue
+            pt = as_array(prediction_time)
+            ts = _values(as_array(times))
+            point = _values(pt)
+            pt_value = float(point[0]) if len(point) == 1 else None
+            bad = 0
+            for i, t in enumerate(ts):
+                ref = pt_value if pt_value is not None else float(point[min(i, len(point) - 1)])
+                if t >= ref:
+                    bad += 1
+            if bad:
+                excluded[spec.name] = bad
+            else:
+                visible.append(spec)
+        reduced = replace(
+            source,
+            name=source.name + "@t",
+            features=tuple(visible),
+        )
+        return cls(source, prediction_time, tuple(visible), excluded, reduced)
+
+    @property
+    def field_names(self) -> list[str]:
+        return [f.name for f in self.visible]
+
+    def report(self) -> dict:
+        return {
+            "track": self.source.name,
+            "visible_fields": self.field_names,
+            "excluded_fields": dict(self.excluded),
+            "predicate": "available_at < prediction_time",
+        }
 
 
 @dataclass(frozen=True)
@@ -302,6 +426,21 @@ class FeatureSchema:
         longest = max((f.steps for f in self.features), default=1)
         return (batch_size, self.sides, self.players, longest)
 
+    # -- time evaluation ---------------------------------------------------
+
+    def at(self, prediction_time, available_at: dict | None = None):
+        """Evaluate which fields are observable at `prediction_time`.
+
+        This is the single availability predicate. Fields without an
+        `available_at` key have no temporal constraint and are always visible.
+        Timed fields are visible only where their timestamps are strictly
+        earlier than the prediction time. There is no PRE/POST binary: a
+        post-game forecast simply uses a later prediction time.
+
+        Returns a :class:`SchemaView` with the visible fields and a report.
+        """
+        return SchemaView.evaluate(self, prediction_time, dict(available_at or {}))
+
     # -- serialization -----------------------------------------------------
 
     def to_dict(self) -> dict:
@@ -310,16 +449,16 @@ class FeatureSchema:
             "task": {
                 "name": self.task.name, "kind": self.task.kind,
                 "labels": list(self.task.labels), "dim": self.task.dim,
-                "link": self.task.link, "available": self.task.available.value,
+                "link": self.task.link,
+                "orientation": self.task.resolved_orientation.value,
             },
             "features": [
                 {
                     "name": f.name, "modality": f.modality.value, "scope": f.scope.value,
                     "width": f.width, "steps": f.steps, "vocab_size": f.vocab_size,
-                    "mask": f.mask, "available": f.available.value,
-                    "available_at": f.available_at, "reduce": f.reduce,
-                    "transform": f.transform, "group": f.group,
-                    "description": f.description,
+                    "mask": f.mask, "available_at": f.available_at,
+                    "structure": f.resolved_structure.value, "reduce": f.reduce,
+                    "group": f.group, "description": f.description,
                 }
                 for f in self.features
             ],
@@ -334,16 +473,22 @@ class FeatureSchema:
             name=data["task"]["name"], kind=data["task"]["kind"],
             labels=tuple(data["task"].get("labels", ())), dim=data["task"].get("dim", 1),
             link=data["task"].get("link", "sigmoid"),
-            available=Availability(data["task"].get("available", "post_match")),
+            orientation=(
+                Orientation(data["task"]["orientation"])
+                if data["task"].get("orientation") else None
+            ),
+            # Old `available` / `transform` keys are intentionally ignored:
+            # the PRE/POST binary and the no-op transform were removed.
         )
         features = tuple(
             FeatureSpec(
                 name=f["name"], modality=Modality(f["modality"]), scope=Scope(f["scope"]),
                 width=f["width"], steps=f.get("steps", 1), vocab_size=f.get("vocab_size", 0),
-                mask=f.get("mask", False),
-                available=Availability(f.get("available", "pre_match")),
-                available_at=f.get("available_at"), reduce=f.get("reduce", "sum"),
-                transform=f.get("transform", "identity"), group=f.get("group", ""),
+                mask=f.get("mask", False), available_at=f.get("available_at"),
+                structure=(
+                    Structure(f["structure"]) if f.get("structure") else None
+                ),
+                reduce=f.get("reduce", "sum"), group=f.get("group", ""),
                 description=f.get("description", ""),
             )
             for f in data["features"]
@@ -409,7 +554,7 @@ class FeatureBatch:
                 if mask_key not in raw:
                     raise ValueError(f"{spec.name} declares a mask; supply {mask_key}")
                 masks[spec.name] = cls._lift_mask(
-                    raw[mask_key], (batch, *schema.canonical_shape(spec, batch)[1:4])
+                    schema, spec, raw[mask_key], batch
                 )
         return cls(
             schema=schema, fields=fields, weights=weights, masks=masks,
@@ -440,11 +585,32 @@ class FeatureBatch:
         return _to_canonical(arr, natural, schema.canonical_shape(spec, batch), axes)
 
     @staticmethod
-    def _lift_mask(raw, shape):
+    def _lift_mask(schema, spec, raw, batch):
+        """Lift a natural-shaped mask into canonical [B,S,N,T].
+
+        A mask has the field's natural shape minus the channel axis, so a
+        MATCH x SEQUENCE mask is [B,T], not [B,1,1,T]. Both the natural form
+        and the already-canonical form are accepted.
+        """
         arr = as_array(raw)
-        if tuple(arr.shape) != shape:
-            raise ValueError(f"mask expects {shape}, got {tuple(arr.shape)}")
-        return arr
+        natural = schema.natural_shape(spec, batch)[:-1]
+        target = (batch, *schema.canonical_shape(spec, batch)[1:4])
+        if tuple(arr.shape) == target:
+            return arr
+        if tuple(arr.shape) != natural:
+            raise ValueError(
+                f"{spec.name}__valid expects natural mask shape {natural} "
+                f"or canonical {target}, got {tuple(arr.shape)}"
+            )
+        axes = []
+        if spec.scope in (Scope.TEAM, Scope.PLAYER):
+            axes.append(1)
+        if spec.scope is Scope.PLAYER:
+            axes.append(2)
+        if spec.modality is Modality.SEQUENCE:
+            axes.append(3)
+        lifted = _to_canonical(arr, (*natural, 1), (*target, 1), axes)
+        return _squeeze_axis(lifted, -1)
 
     # -- validation --------------------------------------------------------
 
@@ -473,20 +639,22 @@ class FeatureBatch:
                     problems.append(f"{spec.name}: mask not aligned with [B,S,N,T]")
                 elif not any(bool(v) for v in _values(m)):
                     problems.append(f"{spec.name}: mask has no observed steps")
-            if strict_time and spec.available is Availability.POST_MATCH:
-                problems.append(
-                    f"{spec.name}: POST_MATCH feature entered a predictor batch "
-                    f"(use an audit batch or re-declare availability)"
-                )
-        # temporal leakage: strict '<' mirrors the framework's replay contract
+        # temporal leakage: strict '<' is the ONLY availability predicate.
+        # A field is a legal input whenever its timestamps are earlier than the
+        # prediction time; post-game inputs need a later prediction time, not
+        # a different field type. Labels live in OutputSpec, never in features.
         if self.prediction_time is not None:
             pt = _values(self.prediction_time)
             for name, times in self.available_at.items():
-                spec = next((f for f in schema.features if f.name == name), None)
+                spec = next(
+                    (f for f in schema.features
+                     if name in {f.name, f.available_at}),
+                    None,
+                )
                 if spec is None:
                     problems.append(f"available_at refers to unknown feature {name}")
                     continue
-                mask = self.masks.get(name)
+                mask = self.masks.get(spec.name)
                 ts = _values(as_array(times))
                 observed = [bool(v) for v in _values(mask)] if mask is not None else [True] * len(ts)
                 per_row = math.prod(schema.canonical_shape(spec, batch)[1:4])
@@ -516,10 +684,10 @@ class FeatureBatch:
                 f.name: tuple(self.fields[f.name].shape) for f in schema.features
             },
             "temporal_evidence_checked": self.prediction_time is not None,
-            "post_match_features": [
-                f.name for f in schema.features
-                if f.available is Availability.POST_MATCH
-            ],
+            "timed_features": [f.name for f in schema.features if f.available_at],
+            "structures": {f.name: f.resolved_structure.value for f in schema.features},
+            "orientation": schema.task.resolved_orientation.value,
+            "criterion": schema.task.criterion(),
         }
 
 
@@ -536,6 +704,17 @@ def _append_axis(arr):
     if _np is not None and isinstance(arr, _np.ndarray):
         return arr.reshape(*shape, 1)
     return _LiteArray(list(arr.flat), (*shape, 1))
+
+
+def _squeeze_axis(arr, axis):
+    """Remove a trailing singleton axis from a canonical array."""
+    shape = tuple(arr.shape)
+    if shape[axis] != 1:
+        raise ValueError("cannot squeeze a non-singleton axis")
+    if _np is not None and isinstance(arr, _np.ndarray):
+        return arr.reshape(*shape[:axis])
+    flat = list(arr.flat) if hasattr(arr, "flat") else list(arr.reshape(-1))
+    return _LiteArray(flat, shape[:axis])
 
 
 def _to_canonical(arr, natural, target, axes):
@@ -742,14 +921,18 @@ SCHEMAS: dict[str, FeatureSchema] = {
                         description="9 smoothed history numerics"),
         ],
     ),
-    # row 5: Dota snapshots are POST-GAME -- Availability makes that explicit
+    # row 5: Dota is a POST-GAME forecast. The snapshots are legal inputs at
+    # that later prediction time; `available_at` (not a PRE/POST tag) states
+    # when each snapshot becomes observable, so a pre-match t excludes them.
     "dota_future_rating": _schema(
         "dota_future_rating", 1, 1,
-        OutputSpec("rating_residual", "regression", dim=1, link="identity"),
+        OutputSpec("rating_residual", "regression", dim=1, link="identity",
+                   orientation=Orientation.NONE),
         [
             FeatureSpec("snapshots", Modality.SEQUENCE, Scope.PLAYER, 6, steps=12, mask=True,
-                        available=Availability.POST_MATCH, group="snapshot",
-                        description="12 three-minute snapshots; not valid pre-match"),
+                        available_at="snapshots_available_at", structure=Structure.ORDERED,
+                        group="snapshot",
+                        description="12 ordered three-minute snapshots; post-game forecast"),
             FeatureSpec("lineups", Modality.COEFFICIENT, Scope.TEAM, 5, vocab_size=114,
                         reduce="sum", group="roster"),
             FeatureSpec("current_mean", Modality.DENSE, Scope.MATCH, 1, group="rating"),
@@ -784,10 +967,18 @@ SCHEMAS["league_history"] = _schema(
 )
 
 
-def predictor_schema(schema: FeatureSchema) -> FeatureSchema:
-    """Drop POST_MATCH fields -- the only schema a predictor is allowed to see."""
-    kept = tuple(f for f in schema.features if f.available is Availability.PRE_MATCH)
-    return replace(schema, name=schema.name + "@predictor", features=kept)
+def predictor_schema(schema: FeatureSchema, prediction_time=None,
+                     available_at: dict | None = None) -> FeatureSchema:
+    """Return the schema a predictor may use at `prediction_time`.
+
+    Legacy compatibility: with no arguments this is an identity rename --
+    every declared feature is an input, because labels live in OutputSpec.
+    Visibility is decided by the single `at(t)` predicate, not by a PRE/POST
+    field tag. Prefer ``schema.at(t).schema`` for new code.
+    """
+    if prediction_time is None:
+        return replace(schema, name=schema.name + "@predictor")
+    return schema.at(prediction_time, available_at).schema
 
 
 def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
@@ -796,16 +987,17 @@ def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
 
     This is the fastest way to go from a declared contract to a real tensor:
     every array is shaped from the schema itself, masks and coefficient slots
-    are filled consistently, and POST_MATCH fields become the targets while
-    PRE_MATCH fields keep a strictly earlier ``available_at``. Useful for smoke
-    tests, tutorials and checking a new adapter before wiring real data.
+    are filled consistently, timed fields get strictly earlier availability
+    evidence, and targets are generated from `OutputSpec` (never from a
+    feature field). Useful for smoke tests, tutorials and checking a new
+    adapter before wiring real data.
 
     Args:
         schema: The contract to sample from.
         batch: Number of rows.
         seed: Seed for reproducible samples.
         prediction_time: Timestamp used for the availability check.
-        with_targets: Whether to expose the POST_MATCH fields as targets.
+        with_targets: Whether to generate targets from OutputSpec.
 
     Returns:
         A validated-ready ``FeatureBatch``.
@@ -823,17 +1015,18 @@ def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
             raw[spec.name] = rng.normal(size=shape)
         if spec.mask:
             raw[f"{spec.name}__valid"] = rng.random(shape[:-1]) < 0.85
-        if spec.available_at and spec.available is Availability.PRE_MATCH:
-            available_at[spec.name] = _np.full(shape[:-1], prediction_time - 86_400.0)
+        if spec.available_at:
+            available_at[spec.available_at] = _np.full(shape[:-1], prediction_time - 86_400.0)
 
     targets = None
-    post = [f for f in schema.features if f.available is Availability.POST_MATCH]
-    if with_targets and post:
-        spec = post[0]
-        shape = schema.natural_shape(spec, batch)
-        classes = max(2, schema.task.dim)
-        values = rng.integers(0, classes, size=shape)
-        targets = values[..., 0] if shape[-1] == 1 else values
+    if with_targets:
+        task = schema.task
+        if task.kind == "regression":
+            targets = rng.normal(size=batch)
+        elif task.kind == "binary":
+            targets = rng.integers(0, 2, size=batch).astype(float)
+        elif task.kind in {"multiclass", "ordinal"}:
+            targets = rng.integers(0, max(2, task.dim), size=batch)
 
     return FeatureBatch.from_natural(
         schema,
