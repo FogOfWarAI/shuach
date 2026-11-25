@@ -137,6 +137,39 @@ now rejected at construction rather than quietly behaving as `sum`.
 
 A full training loop lives in `examples/schema_model.py`.
 
+## Where the input layer and the decision layer disagree
+
+This is the most important boundary to understand before adding a track.
+
+The **decision layer is more general than the input layer**:
+
+- `matching/constraints.py::constrained_assignments` accepts two *unequal*
+  team sizes, ordered role slots per side (repeated role names mark
+  interchangeable slots) and party constraints.
+- `exchangeable_sides` is only permitted for equal sizes with identical slot
+  layouts, and the solver explicitly rejects it otherwise.
+- `matching/search.py` streams candidates with time / candidate budgets, so
+  the scorer is called on batches of feasible assignments rather than on a
+  fixed roster tensor.
+
+The **input layer is rigid by comparison**: `FeatureSchema.sides` and
+`players` are single integers, so the canonical `[B,S,N,T,C]` gives every
+side the same `N`. Unequal teams currently fit by **padding to a common N**
+and relying on masks; role slots are not passed into a feature batch; and
+`Orientation.ANTISYMMETRIC` assumes exactly two exchangeable sides, so it is
+not meaningful for an unequal or multi-team assignment.
+
+Practical consequences:
+
+- Padding is not a participant: `validate_ids()` ignores the padding value
+  and any masked-out slot when checking a declared vocabulary, so a 3v5 lobby
+  padded to five slots per side does not consume five hero IDs.
+- Do not enable side-swap augmentation for unequal teams; the decision layer
+  already forbids it for the same reason.
+- A future input-layer upgrade would replace the scalar `players` with a
+  per-side tuple and let `N` be a padded maximum with masks. That is a schema
+  change, not a configuration option.
+
 ## Current limits
 
 - The existing benchmark runners still consume their native tensors. They have

@@ -230,4 +230,34 @@ Catalog profile names differ from schema keys (`hero-roster` → `hero_binary`, 
 | `steps > 1 is only valid for SEQUENCE` | Non-sequence field declares multiple steps | Move the time axis into a `SEQUENCE` spec with `mask=True` |
 | `SchemaModel ... requires the neural extra` | Trainable bridge used on a base install | `python -m pip install -e '.[neural]'` |
 
+## Check vocabularies at the data boundary
+
+`validate()` checks a *batch*. It cannot tell you that a hero ID outside the
+declared vocabulary exists in the third epoch of training. Check the whole
+adapter once, before building a model:
+
+```python
+from gamematch.features import validate_ids
+
+report = validate_ids(schema, {"hero_id": raw_ids})
+print(report["fields"]["hero_id"]["required_rows"])   # unique real IDs + 1
+```
+
+`raw_ids` holds original participant IDs. The `padding` value (default `0`)
+and positions whose optional mask is `False` are ignored, so an unequal team
+padded to a common slot count is validated on its real participants only.
+`vocabulary_requirements(schema, ids)` returns the same report without raising;
+`validate_ids(strict=True)` raises with the offending IDs named.
+
+This is the data-time counterpart to the batch-level index check. Neither is
+a configuration switch: both are unconditional, and together they replace the
+mid-training `IndexError` from `nn.Embedding` with a precise adapter error.
+
+## One structural boundary
+
+The decision layer accepts unequal team sizes and role slots; the input layer
+does not (it assumes a fixed `N` per side and pads). See
+[Where the input layer and the decision layer disagree](feature-framework-design.md#where-the-input-layer-and-the-decision-layer-disagree)
+before wiring a non-standard lobby.
+
 `validate()` returns a report on success (track, shapes, cells, timing evidence) and raises `ValueError` listing every problem on failure. Call it once at the adapter boundary — it is cheap compared to training.

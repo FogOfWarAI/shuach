@@ -1,5 +1,18 @@
 # Change log
 
+## Unreleased — data-time vocabulary checks and documented layer boundary
+
+- Add `validate_ids()` / `vocabulary_requirements()` to check raw participant
+  IDs against declared coefficient vocabularies once at the adapter boundary.
+  Padding and masked-out slots are excluded, so unequal teams padded to a
+  common slot count are validated on real participants only. A mid-training
+  `nn.Embedding` `IndexError` now becomes a named adapter error.
+- Document the boundary between the decision layer (unequal teams, role slots,
+  party constraints, budgeted search) and the input layer (fixed N per side,
+  padding). Explain that `Orientation.ANTISYMMETRIC` is only meaningful for
+  two exchangeable sides.
+- Add 5 vocabulary validation tests. 288 tests pass.
+
 ## Unreleased — consistency review and framework design guide
 
 - Align timing evaluation across `schema.at()` and `FeatureBatch.validate()`:

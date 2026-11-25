@@ -1118,3 +1118,85 @@ def sample_inputs(schema: FeatureSchema, batch: int = 4, *, seed: int = 0,
         targets=targets,
         **raw,
     )
+
+
+def vocabulary_requirements(schema, ids, *, padding=0, masks=None):
+    """Report the embedding rows each COEFFICIENT field actually needs.
+
+    This is a data-loading-time check: it inspects real participant IDs before
+    a model is built, so an out-of-vocabulary ID can never surface as a
+    mid-training ``IndexError``.
+
+    Args:
+        schema: The contract declaring `vocab_size` for coefficient fields.
+        ids: Mapping from feature name to a raw integer ID array. Only slots
+            that are real participants count: `padding` and positions whose
+            optional validity mask is False are ignored. This is what makes
+            unequal team sizes (padded to a common N) safe to validate.
+        padding: Raw value marking an empty / non-participant slot (default 0).
+        masks: Optional mapping from feature name to a validity mask whose
+            shape matches the ID array (True = real participant).
+
+    Returns:
+        Dict with one record per coefficient field: observed unique IDs,
+        required rows (unique count + 1 for the unknown slot), declared
+        `vocab_size`, headroom, and any IDs above the declared capacity.
+        `ok` is True when every requirement fits the declaration.
+    """
+    if _np is None:
+        raise RuntimeError("vocabulary_requirements needs numpy (base install)")
+    records = {}
+    mask_map = dict(masks or {})
+    for spec in schema.features:
+        if spec.modality is not Modality.COEFFICIENT:
+            continue
+        raw = ids.get(spec.name)
+        if raw is None:
+            raise ValueError(f"missing raw IDs for coefficient field {spec.name}")
+        arr = _np.asarray(raw)
+        observed = arr.copy()
+        if padding is not None:
+            observed = observed[observed != padding]
+        mask = mask_map.get(spec.name)
+        if mask is not None:
+            mask_arr = _np.asarray(mask, dtype=bool)
+            if mask_arr.shape != arr.shape:
+                raise ValueError(
+                    f"{spec.name}: validity mask shape {mask_arr.shape} != IDs {arr.shape}"
+                )
+            observed = observed[mask_arr.reshape(-1)]
+        values = _np.unique(observed).astype(int).tolist()
+        required = len(values) + 1                 # +1 for the unknown bucket
+        over = [int(v) for v in values if v >= spec.vocab_size]
+        records[spec.name] = {
+            "declared": spec.vocab_size,
+            "observed_ids": values,
+            "required_rows": required,
+            "headroom": spec.vocab_size - required,
+            "out_of_vocabulary": over,
+            "ok": not over and required <= spec.vocab_size,
+        }
+    return {
+        "track": schema.name,
+        "fields": records,
+        "ok": all(r["ok"] for r in records.values()),
+    }
+
+
+def validate_ids(schema, ids, *, padding=0, masks=None, strict=True):
+    """Assert that raw IDs fit the declared coefficient vocabularies.
+
+    Run once at the adapter boundary, before building a model. Unlike batch
+    validation this checks the *whole* dataset, including IDs hidden by masks
+    in a particular batch, and treats padding as absent rather than as a
+    vocabulary member.
+    """
+    report = vocabulary_requirements(schema, ids, padding=padding, masks=masks)
+    if strict and not report["ok"]:
+        bad = [
+            f"{name}: needs {r['required_rows']} rows (declared {r['declared']}), "
+            f"out-of-vocabulary IDs {r['out_of_vocabulary'][:8]}"
+            for name, r in report["fields"].items() if not r["ok"]
+        ]
+        raise ValueError("Vocabulary declaration does not fit data:\n  - " + "\n  - ".join(bad))
+    return report

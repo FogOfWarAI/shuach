@@ -30,6 +30,8 @@ from .schema import (
     Structure,
     predictor_schema,
     sample_inputs,
+    validate_ids,
+    vocabulary_requirements,
 )
 
 __all__ = [
@@ -54,6 +56,8 @@ __all__ = [
     "predictor_schema",
     "sample_inputs",
     "swap_sides",
+    "validate_ids",
+    "vocabulary_requirements",
 ]
 
 # Trainable bridge needs the optional `neural` extra. Keep it lazy so a base

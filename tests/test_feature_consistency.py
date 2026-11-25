@@ -22,6 +22,7 @@ from gamematch.features import (
     OutputSpec,
     Scope,
     sample_inputs,
+    validate_ids,
 )
 
 try:
@@ -188,3 +189,52 @@ class AugmentationAndHeadTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VocabularyValidationTests(unittest.TestCase):
+    """Data-time vocabulary checks must use real participants, not padding."""
+
+    def test_padding_does_not_consume_a_vocabulary_row(self):
+        schema = SCHEMAS["hero_binary"]         # vocab_size=114
+        ids = np.zeros((4, 2, 5), dtype=int)
+        ids[0, 0, :3] = [1, 2, 3]                # side 0 has 3 real players
+        ids[0, 1, :2] = [4, 5]                   # side 1 has 2 (unequal teams)
+        ids[1, 0, :5] = [6, 7, 8, 9, 10]
+        ids[1, 1, :5] = [11, 12, 13, 14, 15]
+        report = validate_ids(schema, {"hero_id": ids})
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["fields"]["hero_id"]["required_rows"], 16)
+        self.assertEqual(report["fields"]["hero_id"]["headroom"], 114 - 16)
+
+    def test_out_of_vocabulary_id_reported_by_name(self):
+        schema = SCHEMAS["hero_binary"]
+        ids = np.array([[[1, 2, 999, 0, 0], [3, 4, 5, 6, 7]]])
+        report = validate_ids(schema, {"hero_id": ids}, strict=False)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["fields"]["hero_id"]["out_of_vocabulary"], [999])
+        with self.assertRaisesRegex(ValueError, "999"):
+            validate_ids(schema, {"hero_id": ids})
+
+    def test_validity_mask_excludes_non_participants(self):
+        schema = SCHEMAS["hero_binary"]
+        ids = np.array([[[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]]])
+        mask = np.ones((1, 2, 5), dtype=bool)
+        mask[0, 1, 3:] = False                   # side 1 has only 3 players
+        ids[0, 1, 3:] = 999                      # padding carries a junk ID
+        report = validate_ids(schema, {"hero_id": ids}, masks={"hero_id": mask})
+        self.assertTrue(report["ok"])
+        self.assertNotIn(999, report["fields"]["hero_id"]["observed_ids"])
+
+    def test_exact_capacity_with_unknown_bucket(self):
+        schema = SCHEMAS["hero_binary"]
+        ids = np.arange(1, 114).reshape(1, 1, 113)[..., None]
+        ids = np.pad(ids, ((0, 0), (0, 1), (0, 0), (0, 0)))
+        report = validate_ids(schema, {"hero_id": ids})
+        self.assertEqual(report["fields"]["hero_id"]["required_rows"], 114)
+        self.assertEqual(report["fields"]["hero_id"]["headroom"], 0)
+
+    def test_unequal_masks_are_rejected(self):
+        schema = SCHEMAS["hero_binary"]
+        ids = np.ones((2, 2, 5), dtype=int)
+        with self.assertRaisesRegex(ValueError, "mask shape"):
+            validate_ids(schema, {"hero_id": ids}, masks={"hero_id": np.ones((2, 2))})
