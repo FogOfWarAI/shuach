@@ -219,6 +219,7 @@ class FeatureSpec:
     reduce: str = "sum"                          # coef: sum|mean|max; seq: mean|last
     group: str = ""                              # semantic group, for ablations
     description: str = ""
+    source: str = ""                             # provenance: adapter / dataset column
     available: Availability | None = None        # DEPRECATED, ignored everywhere
 
     def __post_init__(self):
@@ -524,6 +525,7 @@ class FeatureSchema:
                     "structure": f.structure.value if f.structure else None,
                     "reduce": f.reduce,
                     "group": f.group, "description": f.description,
+                    "source": f.source,
                 }
                 for f in self.features
             ],
@@ -559,7 +561,7 @@ class FeatureSchema:
                     Structure(f["structure"]) if f.get("structure") else None
                 ),
                 reduce=f.get("reduce", "sum"), group=f.get("group", ""),
-                description=f.get("description", ""),
+                description=f.get("description", ""), source=f.get("source", ""),
             )
             for f in data["features"]
         )
@@ -571,6 +573,39 @@ class FeatureSchema:
         for f in self.features:
             result.setdefault(f.key, []).append(f.name)
         return result
+
+    def content_hash(self) -> str:
+        """Stable sha256 of the declared contract, for run artifacts.
+
+        A run must record this so a later reader can tell whether the feature
+        declaration (shapes, vocab sizes, timing and semantics) is the one the
+        numbers were produced with. Uses canonical JSON, not repr(), so it is
+        stable across processes and Python versions.
+        """
+        import hashlib
+        canonical = json.dumps(
+            self.to_dict(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def provenance(self) -> dict:
+        """Where each declared field comes from, for audit and drift checks."""
+        return {
+            "track": self.name,
+            "content_hash": self.content_hash(),
+            "fields": {
+                f.name: {
+                    "source": f.source or None,
+                    "modality": f.modality.value,
+                    "scope": f.scope.value,
+                    "width": f.width,
+                    "vocab_size": f.vocab_size or None,
+                    "available_at": f.available_at,
+                }
+                for f in self.features
+            },
+            "undeclared_sources": [f.name for f in self.features if not f.source],
+        }
 
     def validate(self, batch: "FeatureBatch", *, strict_time: bool = True) -> dict:
         return batch.validate(strict_time=strict_time)

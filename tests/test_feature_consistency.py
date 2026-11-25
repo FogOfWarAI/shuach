@@ -8,6 +8,7 @@ agree, augmentation must preserve declared semantics, and declarations that a
 model cannot honour must be rejected at construction time.
 """
 
+import json
 import unittest
 
 import numpy as np
@@ -187,9 +188,6 @@ class AugmentationAndHeadTests(unittest.TestCase):
         self.assertNotIn("team_form", dict(model.encoder.slot_embeddings))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class VocabularyValidationTests(unittest.TestCase):
     """Data-time vocabulary checks must use real participants, not padding."""
@@ -238,3 +236,38 @@ class VocabularyValidationTests(unittest.TestCase):
         ids = np.ones((2, 2, 5), dtype=int)
         with self.assertRaisesRegex(ValueError, "mask shape"):
             validate_ids(schema, {"hero_id": ids}, masks={"hero_id": np.ones((2, 2))})
+
+
+class ReproducibilityTests(unittest.TestCase):
+    """A run artifact must identify the feature contract that produced it."""
+
+    def test_content_hash_is_stable_and_sensitive(self):
+        from dataclasses import replace
+        schema = SCHEMAS["hero_binary"]
+        self.assertEqual(schema.content_hash(), FeatureSchema.from_dict(schema.to_dict()).content_hash())
+        changed = replace(schema, features=(
+            replace(schema.features[0], vocab_size=200),
+        ))
+        self.assertNotEqual(schema.content_hash(), changed.content_hash())
+
+    def test_provenance_reports_undeclared_sources(self):
+        from dataclasses import replace
+        schema = SCHEMAS["hero_binary"]
+        declared = replace(schema, features=(replace(schema.features[0], source="uci-dota2:roster"),))
+        prov = declared.provenance()
+        self.assertEqual(prov["undeclared_sources"], [])
+        self.assertEqual(prov["fields"]["hero_id"]["source"], "uci-dota2:roster")
+        self.assertEqual(prov["content_hash"], declared.content_hash())
+        self.assertEqual(SCHEMAS["hero_binary"].provenance()["undeclared_sources"], ["hero_id"])
+
+    def test_schema_hash_survives_json_roundtrip(self):
+        for schema in SCHEMAS.values():
+            with self.subTest(schema=schema.name):
+                self.assertEqual(
+                    schema.content_hash(),
+                    FeatureSchema.from_dict(json.loads(schema.to_json())).content_hash(),
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

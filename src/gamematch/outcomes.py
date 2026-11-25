@@ -6,6 +6,7 @@
 import json
 from pathlib import Path
 
+from .artifacts import write_json
 from .catalog import check_models
 from .configuration import validate_matrix, validate_training_settings
 
@@ -80,12 +81,18 @@ def plan_outcomes(config):
             raise ValueError(
                 "Dataset is not served by this input adapter: " + ", ".join(sorted(unknown))
             )
+    # Attach the executable feature contract's identity so every run records
+    # which declaration produced its numbers. Lazy import avoids a cycle:
+    # catalog depends on features, outcomes depends on catalog.
+    from .catalog import feature_schema_for
+
+    schema_audit = feature_schema_for(profile).provenance()
     # These native adapters have fixed semantics. An ignored apparent override
     # would be more dangerous than an explicit unsupported-request error.
     for key in ("classes", "outcome_labels", "team_size", "team_sizes", "domains"):
         if key in config or key in config.get("training", {}):
             raise ValueError(f"Native adapter fixes {key}; use the explicit history-model API")
-    return {"protocol": protocol, **report}
+    return {"protocol": protocol, "schema_audit": schema_audit, **report}
 
 
 def run_outcomes(config_path, workspace, output):
@@ -102,6 +109,9 @@ def run_outcomes(config_path, workspace, output):
     """
     config_path = Path(config_path).resolve()
     plan = plan_outcomes(json.loads(config_path.read_text()))
+    output = Path(output).resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "schema_audit.json", plan["schema_audit"])
     profile = plan["profile"]["name"]
     if profile == "hero-roster":
         from .runner import run_benchmark
