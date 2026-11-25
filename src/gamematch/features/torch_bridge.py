@@ -117,6 +117,9 @@ class SchemaEncoder(nn.Module):
             tokens = tokens + local
 
         valid = torch.ones(B, S, N, dtype=torch.bool, device=device)
+        for side, size in enumerate(self.schema.side_sizes):
+            if size < N:
+                valid[:, side, size:] = False
         for spec in visible:
             if spec.mask and spec.scope is Scope.PLAYER:
                 mask = _tensor(batch.masks[spec.name], device=device, dtype=torch.bool)

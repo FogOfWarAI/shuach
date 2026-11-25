@@ -611,8 +611,17 @@ class FeatureSchema:
         stable across processes and Python versions.
         """
         import hashlib
+        payload = self.to_dict()
+        # Documentation-only fields must not change the contract identity.
+        payload.pop("description", None)
+        for f in payload.get("features", []):
+            f.pop("description", None)
+        # A declared layout equal to the implicit default is the same contract.
+        pps = payload.get("players_per_side")
+        if pps is None or pps == [self.players] * self.sides:
+            payload.pop("players_per_side", None)
         canonical = json.dumps(
-            self.to_dict(), sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -946,6 +955,13 @@ class FeatureEncoder:
                     for d in range(D):
                         _set(context, (b, d), _get(context, (b, d)) + _get(local, (b, 0, 0, d)))
         valid = _array((B, S, N), 1, dtype=bool if _np is not None else None)
+        # Unequal teams are padded to a common N; slots beyond a side's real
+        # participant count are not players and must not enter the mean.
+        for side, size in enumerate(self.schema.side_sizes):
+            if size < N:
+                for player in range(size, N):
+                    for b in range(B):
+                        _set(valid, (b, side, player), False)
         for spec in self.schema.features:
             if not spec.mask or spec.scope is not Scope.PLAYER:
                 continue
@@ -1217,9 +1233,7 @@ def vocabulary_requirements(schema, ids, *, padding=0, masks=None):
         if raw is None:
             raise ValueError(f"missing raw IDs for coefficient field {spec.name}")
         arr = _np.asarray(raw)
-        observed = arr.copy()
-        if padding is not None:
-            observed = observed[observed != padding]
+        observed = arr.reshape(-1)
         mask = mask_map.get(spec.name)
         if mask is not None:
             mask_arr = _np.asarray(mask, dtype=bool)
@@ -1227,7 +1241,12 @@ def vocabulary_requirements(schema, ids, *, padding=0, masks=None):
                 raise ValueError(
                     f"{spec.name}: validity mask shape {mask_arr.shape} != IDs {arr.shape}"
                 )
+            # Apply the mask at the ORIGINAL positions first; filtering padding
+            # before the mask would change the length and silently break the
+            # boolean index (or raise IndexError).
             observed = observed[mask_arr.reshape(-1)]
+        if padding is not None:
+            observed = observed[observed != padding]
         values = _np.unique(observed).astype(int).tolist()
         required = len(values) + 1                 # +1 for the unknown bucket
         over = [int(v) for v in values if v >= spec.vocab_size]

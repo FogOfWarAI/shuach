@@ -89,6 +89,10 @@ def main(argv=None):
     report = commands.add_parser("report", help="Summarize any benchmark track without changing run artifacts")
     report.add_argument("run_directory", type=Path)
     report.add_argument("--output", type=Path, help="Dedicated report directory; default RUN/report")
+    schema_train = commands.add_parser(
+        "schema-train", help="Validate a SchemaTrainConfig JSON without starting training"
+    )
+    schema_train.add_argument("--config", type=Path, required=True)
     demo = commands.add_parser(
         "lobby-demo", help="Synthetic exact-search example with an independent evaluator"
     )
@@ -134,6 +138,14 @@ def main(argv=None):
 
         try:
             print(json.dumps(feature_schema_for(args.profile).to_dict(), indent=2))
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+    elif args.command == "schema-train":
+        from .schema_config import load_schema_train_config
+
+        try:
+            config = load_schema_train_config(args.config)
+            print(json.dumps(config.to_dict(), indent=2))
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
     elif args.command == "doctor":

@@ -109,9 +109,6 @@ def run_outcomes(config_path, workspace, output):
     """
     config_path = Path(config_path).resolve()
     plan = plan_outcomes(json.loads(config_path.read_text()))
-    output = Path(output).resolve()
-    output.mkdir(parents=True, exist_ok=True)
-    write_json(output / "schema_audit.json", plan["schema_audit"])
     profile = plan["profile"]["name"]
     if profile == "hero-roster":
         from .runner import run_benchmark
@@ -129,4 +126,11 @@ def run_outcomes(config_path, workspace, output):
         from .rating_runner import run_ratings
 
         runner = run_ratings
-    return runner(config_path, Path(workspace).resolve(), Path(output).resolve())
+    # Write the audit only AFTER the runner has accepted/reused the output.
+    # Writing before would overwrite the record of a run that is then rejected
+    # by an incomplete/pinned manifest check.
+    result = runner(config_path, Path(workspace).resolve(), Path(output).resolve())
+    audit_path = Path(output).resolve() / "schema_audit.json"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(audit_path, plan["schema_audit"])
+    return result

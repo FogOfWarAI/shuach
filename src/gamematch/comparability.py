@@ -19,12 +19,32 @@ from __future__ import annotations
 import hashlib
 import json
 
-__all__ = ["input_contract", "assert_comparable"]
+__all__ = ["input_contract", "assert_comparable", "split_hash"]
 
 
 def _stable_hash(value) -> str:
     blob = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def split_hash(data_manifest):
+    """Hash the data-derived split identity, not the config/code fingerprint.
+
+    A split is defined by source files, split seed, row counts and the group
+    grouping rule -- all present in the data manifest. Mixing in the config
+    fingerprint would make every model look comparable even if the underlying
+    split changed, which defeats the guard.
+    """
+    if not isinstance(data_manifest, dict):
+        raise ValueError("data_manifest must be a dict")
+    identity = {
+        "sources": data_manifest.get("sources"),
+        "split_seed": data_manifest.get("split_seed"),
+        "rows": data_manifest.get("rows"),
+        "grouping": data_manifest.get("grouping"),
+        "protocol": data_manifest.get("protocol"),
+    }
+    return _stable_hash(identity)
 
 
 def input_contract(*, dataset, split_fingerprint, vocabulary, schema_hash=None,

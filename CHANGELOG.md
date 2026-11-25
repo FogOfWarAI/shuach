@@ -1,5 +1,27 @@
 # Change log
 
+## Unreleased — reproducible contracts, fair comparisons and training config
+
+- Record feature-contract identity in run artifacts: `content_hash()` is a
+  stable sha256 of canonical declaration JSON (documentation fields and
+  default layouts excluded); `provenance()` reports field sources;
+  `plan_outcomes()` returns a `schema_audit` and `run_outcomes()` writes it to
+  `schema_audit.json` only after the runner accepts the output directory.
+- Declare fair multi-model inputs: `comparability.input_contract()` /
+  `assert_comparable()` compare dataset, data-derived split hash, vocabulary
+  (size + hashed values), schema hash and timing rule; `runner.py` persists
+  `input-contract.json` per dataset.
+- Add `SchemaTrainConfig` + `load_schema_train_config()` for the declarative
+  path (optimization settings only, never schema semantics) with JSON example
+  and `gamematch schema-train --config ...` validation entry point.
+- Declare per-side team sizes: `players_per_side` / `side_sizes` /
+  `exchangeable_sides`; unequal or multi-team layouts disable signed pooling,
+  bias-free heads and side-swap; padded slots are excluded from pooling and
+  from vocabulary checks.
+- Post-iteration review fixes: mask-before-padding order in `validate_ids`,
+  data-derived split hash, CLI config validation, hash normalization.
+- 311 tests pass; ruff clean; coverage 91%; wheel/sdist inspection passed.
+
 ## Unreleased — data-time vocabulary checks and documented layer boundary
 
 - Add `validate_ids()` / `vocabulary_requirements()` to check raw participant

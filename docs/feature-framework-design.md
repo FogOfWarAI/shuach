@@ -159,6 +159,12 @@ and relying on masks; role slots are not passed into a feature batch; and
 `Orientation.ANTISYMMETRIC` assumes exactly two exchangeable sides, so it is
 not meaningful for an unequal or multi-team assignment.
 
+The gap is now **declared rather than assumed**: `FeatureSchema.players_per_side`
+records real participant counts per side, and `exchangeable_sides` is true only
+for two equal-sized sides. Unequal or multi-team layouts disable signed side
+pooling, bias-free heads and `swap_sides`, and padded slots never enter pooling
+or vocabulary checks.
+
 Practical consequences:
 
 - Padding is not a participant: `validate_ids()` ignores the padding value

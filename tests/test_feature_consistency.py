@@ -410,3 +410,51 @@ class SideLayoutTests(unittest.TestCase):
         batch = sample_inputs(schema, batch=2, seed=0)
         with self.assertRaisesRegex(ValueError, "exchangeable"):
             swap_sides(schema, batch)
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    """Bugs found by the post-iteration review must stay fixed."""
+
+    def test_validate_ids_padding_then_mask_no_index_error(self):
+        schema = SCHEMAS["hero_binary"]
+        ids = np.array([[[1, 2, 0, 0, 0], [3, 0, 0, 0, 0]]])
+        mask = np.array([[[1, 1, 0, 0, 0], [1, 0, 0, 0, 0]]], dtype=bool)
+        report = validate_ids(schema, {"hero_id": ids}, masks={"hero_id": mask})
+        self.assertEqual(report["fields"]["hero_id"]["observed_ids"], [1, 2, 3])
+
+    def test_content_hash_ignores_documentation(self):
+        from dataclasses import replace
+        schema = SCHEMAS["hero_binary"]
+        changed = replace(schema, features=(
+            replace(schema.features[0], description="field docs"),
+        ))
+        self.assertEqual(schema.content_hash(), changed.content_hash())
+
+    def test_content_hash_normalizes_default_layout(self):
+        from dataclasses import replace
+        schema = SCHEMAS["hero_binary"]
+        explicit = replace(schema, players_per_side=(5, 5))
+        self.assertEqual(schema.content_hash(), explicit.content_hash())
+
+    def test_split_hash_is_data_derived(self):
+        from gamematch.comparability import split_hash
+
+        manifest = {
+            "sources": [{"path": "a", "sha256": "x"}],
+            "split_seed": 0, "rows": {"train": 10}, "grouping": "g", "protocol": "p",
+        }
+        self.assertEqual(len(split_hash(manifest)), 64)
+        self.assertNotEqual(split_hash(manifest), split_hash({**manifest, "split_seed": 1}))
+
+    def test_unequal_padding_slots_are_not_valid_players(self):
+        from dataclasses import replace
+
+        schema = replace(SCHEMAS["hero_binary"], players=3, players_per_side=(3, 2))
+        batch = sample_inputs(schema, batch=2, seed=0)
+        report = batch.validate()
+        self.assertTrue(report["features"] == len(schema.features))
+        from gamematch.features import FeatureEncoder
+
+        enc = FeatureEncoder(schema, dim=4, seed=0)
+        valid = np.asarray(enc(batch).valid)
+        self.assertFalse(valid[:, 1, 2].any())     # padded slot never valid
