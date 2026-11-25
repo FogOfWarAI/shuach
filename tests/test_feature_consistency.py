@@ -323,3 +323,36 @@ class ComparabilityTests(unittest.TestCase):
     def test_vocabulary_values_are_hashed_not_embedded(self):
         c = self._contract()
         self.assertEqual(len(c["vocabulary_values_sha256"]), 64)
+
+
+class SchemaTrainConfigTests(unittest.TestCase):
+    """Optimization config is validated but cannot change schema semantics."""
+
+    def setUp(self):
+        from gamematch.schema_config import SchemaTrainConfig, load_schema_train_config
+
+        self.cfg_cls = SchemaTrainConfig
+        self.load = load_schema_train_config
+
+    def test_load_example_and_roundtrip(self):
+        cfg = self.load("examples/schema-train.json")
+        self.assertEqual(cfg.dim, 16)
+        self.assertEqual(cfg.to_dict(), self.cfg_cls(**cfg.to_dict()).to_dict())
+
+    def test_overrides_applied_after_load(self):
+        cfg = self.load("examples/schema-train.json", overrides={"dim": 8, "seed": 3})
+        self.assertEqual((cfg.dim, cfg.seed), (8, 3))
+
+    def test_invalid_values_rejected_before_side_effects(self):
+        for bad in ({"epochs": 0}, {"dim": 1}, {"learning_rate": -0.1},
+                    {"device": "tpu"}, {"seed": -1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.cfg_cls(**bad).validate()
+
+    def test_unknown_keys_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            self.load({"structure": "ordered"})       # schema semantics forbidden
+
+    def test_accepts_bare_config_dict(self):
+        cfg = self.load({"epochs": 3, "dim": 4})
+        self.assertEqual((cfg.epochs, cfg.dim), (3, 4))
