@@ -356,3 +356,57 @@ class SchemaTrainConfigTests(unittest.TestCase):
     def test_accepts_bare_config_dict(self):
         cfg = self.load({"epochs": 3, "dim": 4})
         self.assertEqual((cfg.epochs, cfg.dim), (3, 4))
+
+
+class SideLayoutTests(unittest.TestCase):
+    """Unequal and multi-team layouts must be declared, not silently assumed."""
+
+    def test_default_layouts_remain_exchangeable(self):
+        for schema in SCHEMAS.values():
+            if schema.sides == 2:
+                self.assertTrue(schema.exchangeable_sides, schema.name)
+            self.assertEqual(len(schema.side_sizes), schema.sides)
+
+    def test_unequal_teams_declared(self):
+        from dataclasses import replace
+        schema = replace(
+            SCHEMAS["hero_binary"], players=3, sides=2,
+            players_per_side=(3, 2),
+        )
+        self.assertEqual(schema.side_sizes, (3, 2))
+        self.assertFalse(schema.exchangeable_sides)
+        self.assertEqual(
+            FeatureSchema.from_dict(schema.to_dict()).players_per_side, (3, 2)
+        )
+
+    def test_invalid_side_layouts_rejected(self):
+        from dataclasses import replace
+        base = SCHEMAS["hero_binary"]
+        for kwargs in (
+            {"players_per_side": (3,)},             # wrong count
+            {"players_per_side": (0, 5)},          # nonpositive
+            {"players_per_side": (4, 4)},          # max != players
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                replace(base, **kwargs)
+
+    def test_multi_team_layout_is_not_exchangeable(self):
+        from dataclasses import replace
+        schema = replace(SCHEMAS["hero_binary"], sides=3, players=5,
+                         players_per_side=(5, 5, 5))
+        self.assertFalse(schema.exchangeable_sides)
+        self.assertEqual(len(schema.side_sizes), 3)
+
+    @unittest.skipUnless(TORCH_AVAILABLE, "requires the neural extra")
+    def test_unequal_sides_disable_signed_pooling_and_swap(self):
+        from dataclasses import replace
+
+        from gamematch.features import make_model_from_schema, swap_sides
+
+        schema = replace(SCHEMAS["hero_binary"], players=3, players_per_side=(3, 2))
+        model = make_model_from_schema(schema, dim=6)
+        self.assertFalse(model.encoder.uses_signed_sides)
+        self.assertTrue(model.head.bias is not None)
+        batch = sample_inputs(schema, batch=2, seed=0)
+        with self.assertRaisesRegex(ValueError, "exchangeable"):
+            swap_sides(schema, batch)

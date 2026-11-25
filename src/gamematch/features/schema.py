@@ -450,16 +450,38 @@ class FeatureSchema:
     players: int = 5
     features: tuple[FeatureSpec, ...] = ()
     task: OutputSpec = field(default_factory=lambda: OutputSpec("win", "binary"))
+    players_per_side: tuple[int, ...] | None = None  # None -> (players,) * sides
 
     def __post_init__(self):
         if type(self.sides) not in (int,) or self.sides < 1:
             raise ValueError("sides must be a positive integer")
         if type(self.players) not in (int,) or self.players < 1:
             raise ValueError("players must be a positive integer")
+        if self.players_per_side is not None:
+            sizes = self.players_per_side
+            if not isinstance(sizes, tuple) or len(sizes) != self.sides:
+                raise ValueError("players_per_side must be a tuple with one size per side")
+            if any(type(n) is not int or n < 1 for n in sizes):
+                raise ValueError("players_per_side entries must be positive integers")
+            if max(sizes) != self.players:
+                raise ValueError("players must equal max(players_per_side)")
         if len({f.name for f in self.features}) != len(self.features):
             raise ValueError("Duplicate feature names")
         # sides == 1 is legitimate (DBD predator, Dota focal player): the S axis
         # simply collapses. Scope never changes the allowed side count.
+
+    @property
+    def side_sizes(self) -> tuple[int, ...]:
+        """Real participant count per side; N in [B,S,N,T,C] is max(side_sizes)."""
+        return self.players_per_side or (self.players,) * self.sides
+
+    @property
+    def exchangeable_sides(self) -> bool:
+        """Side swap is only meaningful for two sides of equal size."""
+        return (
+            len(self.side_sizes) == 2
+            and self.side_sizes[0] == self.side_sizes[1]
+        )
 
     # -- shape algebra -----------------------------------------------------
 
@@ -509,6 +531,7 @@ class FeatureSchema:
     def to_dict(self) -> dict:
         return {
             "name": self.name, "sides": self.sides, "players": self.players,
+            "players_per_side": list(self.players_per_side) if self.players_per_side else None,
             "task": {
                 "name": self.task.name, "kind": self.task.kind,
                 "labels": list(self.task.labels), "dim": self.task.dim,
@@ -565,7 +588,12 @@ class FeatureSchema:
             )
             for f in data["features"]
         )
-        return cls(data["name"], data.get("sides", 2), data.get("players", 5), features, task)
+        pps = data.get("players_per_side")
+        return cls(
+            data["name"], data.get("sides", 2), data.get("players", 5),
+            features, task,
+            players_per_side=tuple(pps) if pps else None,
+        )
 
     def cells(self) -> dict[tuple[str, str], list[str]]:
         """Design matrix: which features occupy each (modality, scope) cell."""

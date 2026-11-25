@@ -140,7 +140,7 @@ class SchemaEncoder(nn.Module):
         """
         task = self.schema.task
         return (
-            self.schema.sides == 2
+            self.schema.exchangeable_sides
             and task.resolved_orientation is Orientation.ANTISYMMETRIC
             and task.kind in {"binary", "multiclass", "ordinal"}
         )
@@ -228,8 +228,8 @@ def swap_sides(schema: FeatureSchema, batch: FeatureBatch):
     three-class WDL the loss/draw/win indices are reversed. Returns a new
     FeatureBatch with the S axis reversed and transformed targets.
     """
-    if schema.sides != 2:
-        raise ValueError("swap_sides requires a two-sided schema")
+    if not schema.exchangeable_sides:
+        raise ValueError("swap_sides requires two equal-sized exchangeable sides")
     # Only fields whose canonical S axis is 2 carry side information. MATCH
     # fields must keep their time axis untouched.
     sided = {
@@ -293,6 +293,14 @@ class SchemaModel(nn.Module):
         self.schema = schema
         self.encoder = SchemaEncoder(schema, dim=dim, seed=seed)
         self.head = make_head(schema.task, dim)
+        # An unequal / multi-team layout is not exchangeable, so a declared
+        # antisymmetric orientation cannot be honoured. Keep a bias and use
+        # invariant pooling rather than silently applying a wrong sign rule.
+        if not schema.exchangeable_sides and schema.task.resolved_orientation is Orientation.ANTISYMMETRIC:
+            if schema.task.kind in {"binary", "multiclass", "ordinal"}:
+                in_features = self.head.in_features
+                out_features = self.head.out_features
+                self.head = nn.Linear(in_features, out_features, bias=True)
 
     def forward(self, batch: FeatureBatch):
         inputs = self.encoder(batch)
