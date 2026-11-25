@@ -271,3 +271,55 @@ class ReproducibilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ComparabilityTests(unittest.TestCase):
+    """A model comparison must declare the input all models share."""
+
+    def setUp(self):
+        from gamematch.comparability import assert_comparable, input_contract
+
+        self.contract = input_contract
+        self.assert_comparable = assert_comparable
+
+    class _Vocab:
+        size = 115
+        values = [1, 2, 3, 4, 5]
+
+    def _contract(self, **overrides):
+        base = dict(
+            dataset="uci-dota2", split_fingerprint="abc123",
+            vocabulary=self._Vocab(), schema_hash="hash1",
+        )
+        base.update(overrides)
+        return self.contract(**base)
+
+    def test_shared_contract_accepted(self):
+        c = self.assert_comparable(
+            {"logistic": self._contract(), "mlp": self._contract()},
+            ["logistic", "mlp"],
+        )
+        self.assertEqual(c["models"], ["logistic", "mlp"])
+        self.assertEqual(c["vocabulary_size"], 115)
+
+    def test_vocabulary_mismatch_rejected(self):
+        with self.assertRaisesRegex(ValueError, "vocabulary_size"):
+            self.assert_comparable(
+                {"a": self._contract(), "b": self._contract(vocabulary=50)},
+                ["a", "b"],
+            )
+
+    def test_split_mismatch_rejected(self):
+        with self.assertRaisesRegex(ValueError, "split_fingerprint"):
+            self.assert_comparable(
+                {"a": self._contract(), "b": self._contract(split_fingerprint="other")},
+                ["a", "b"],
+            )
+
+    def test_missing_model_rejected(self):
+        with self.assertRaisesRegex(ValueError, "missing input contract"):
+            self.assert_comparable({"a": self._contract()}, ["a", "b"])
+
+    def test_vocabulary_values_are_hashed_not_embedded(self):
+        c = self._contract()
+        self.assertEqual(len(c["vocabulary_values_sha256"]), 64)

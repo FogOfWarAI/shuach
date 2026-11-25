@@ -379,6 +379,20 @@ def run_benchmark(config_path: Path, workspace: Path, output: Path):
                     for field in ["row_ids", "groups"]
                 },
             )
+            # All models below reuse this exact splits/vocabulary pair. Declare
+            # that invariant once and persist it so a comparison is auditable.
+            from .comparability import assert_comparable, input_contract
+
+            shared = input_contract(
+                dataset=dataset,
+                split_fingerprint=data_manifest.get("fingerprint") or fingerprint,
+                vocabulary=vocabulary,
+                timing_rule="observed_prediction",
+            )
+            contract = assert_comparable(
+                {model: shared for model in raw["models"]}, raw["models"]
+            )
+            write_json(dataset_dir / "input-contract.json", contract)
             for seed in raw["seeds"]:
                 for model in raw["models"]:
                     directory = dataset_dir / f"seed-{seed}-{model}"
