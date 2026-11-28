@@ -17,6 +17,14 @@ Ava (6) and Bo (4) can captain a team. Cy (3) and Di (1) fill the remaining slot
 
 ## Follow a match from data to decision
 
+| Module | Responsibility | Interface |
+| --- | --- | --- |
+| Inputs | Dataset adapters read historical rows. For a declared schema, callers supply natural-layout arrays and timestamps. | `gamematch.data`, `FeatureBatch.from_natural` |
+| Feature processing | Apply scope, masks, availability and pooling rules to build match and team representations. | `gamematch.features.FeatureEncoder` (reference), `SchemaEncoder` (trainable) |
+| Models | Map a representation to logits or a numeric prediction. Published benchmark runners also use model-specific adapters. | `gamematch.models`, `gamematch.features.make_model_from_schema` |
+| Tasks | Specify the target, label order, output width, loss and behavior under team exchange. Assignment objectives live in the matching layer. | `gamematch.tasks.OutputSpec`, `gamematch.matching` |
+| Evaluation | Score held-out binary, multiclass, ordinal and regression predictions. Synthetic decisions additionally compare assignments against a known oracle. | `gamematch.evaluation`, `decision-benchmark` |
+
 | What do you want to do? | Start here |
 | --- | --- |
 | Estimate player skill using only results available at match time | [Player ratings](api.md#rating-adapters) · [Data contracts](data-contracts.md) |

@@ -70,4 +70,5 @@ nav:
   - CLI: cli.md
   - 中文:
       - 中文入门: start-zh.md
+      - 从阵容到评估: pipeline-zh.md
       - 中文 API: api-zh.md

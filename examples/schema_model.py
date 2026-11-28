@@ -95,6 +95,12 @@ def main(argv=None):
     with torch.no_grad():
         prediction = model.predict_proba(test)
     print(f"prediction shape={tuple(prediction.shape)}, finite={bool(torch.isfinite(prediction).all())}")
+    if task.kind == "binary":
+        from gamematch.evaluation.binary import binary_metrics
+
+        metrics = binary_metrics(test.targets, prediction[:, 1].cpu().numpy())
+        print(f"Generated test batch: n={metrics['n']}, log loss={metrics['log_loss']:.4f}, "
+              f"Brier score={metrics['brier']:.4f}")
     print("OK: schema -> model -> prediction is connected")
     return 0
 

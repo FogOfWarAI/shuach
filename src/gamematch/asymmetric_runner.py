@@ -25,28 +25,11 @@ from .configuration import runtime_identity, validate_matrix, validate_training_
 from .data.asymmetric import CATEGORICAL_FEATURES, NUMERIC_FEATURES, load_asymmetric
 from .data.history import history_split_masks
 from .evaluation.multiclass import multiclass_metrics
+from .evaluation.ordinal import ordinal_metrics
 from .history_runner import temperature_fit
 from .models.ordinal import OrdinalMLP
 from .models.tabular import predict_kill_counts, require_logistic_convergence
 from .runner import code_hash, set_seed, write_json
-
-
-def ordinal_metrics(y, probability):
-    value = multiclass_metrics(y, probability)
-    expected = probability @ np.arange(probability.shape[1])
-    value.update(
-        expected_count_mae=float(np.abs(expected - y).mean()),
-        expected_count_rmse=float(np.sqrt(np.square(expected - y).mean())),
-        ranked_probability_score=float(
-            np.square(
-                np.cumsum(probability, axis=1)[:, :-1]
-                - (y[:, None] <= np.arange(probability.shape[1] - 1))
-            )
-            .sum(1)
-            .mean()
-        ),
-    )
-    return value
 
 
 def run_asymmetric(config_path, workspace, output):
