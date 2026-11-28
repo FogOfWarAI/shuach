@@ -24,19 +24,24 @@ import torch
 from torch import nn
 
 from .schema import (
-    Availability,
     FeatureBatch,
     FeatureSchema,
     Modality,
     ModelInputs,
+    Orientation,
     OutputSpec,
     Scope,
+    Structure,
+    as_array,
 )
 
 
 def _tensor(value, *, device, dtype=torch.float32):
     """Convert a canonical numpy array (or nested sequence) into a tensor."""
-    return torch.as_tensor(np.asarray(value), dtype=dtype, device=device)
+    array = np.asarray(value)
+    if not array.flags.writeable or any(stride < 0 for stride in array.strides):
+        array = array.copy()
+    return torch.as_tensor(array, dtype=dtype, device=device)
 
 
 class SchemaEncoder(nn.Module):
@@ -55,7 +60,32 @@ class SchemaEncoder(nn.Module):
         generator = torch.Generator().manual_seed(seed)
         self.embeddings = nn.ModuleDict()
         self.projections = nn.ModuleDict()
+        self.role_gates = nn.ModuleDict()
+        self.register_buffer("role_indices", None, persistent=False)
+        self.side_projection = None
+        if (schema.sides > 1 and not schema.exchangeable_sides
+                and schema.task.resolved_orientation is not Orientation.SYMMETRIC):
+            self.side_projection = nn.Linear(schema.sides * dim, dim, bias=False)
+        # Multiplicative gates retain the interaction between position and
+        # content after pooling. An additive position bias would average out.
+        ordered = [
+            f for f in schema.features
+            if f.resolved_structure is Structure.ORDERED
+            and f.modality is Modality.SEQUENCE
+        ]
+        self.slot_embeddings = nn.ParameterDict()
+        for spec in ordered:
+            table = torch.empty(spec.steps, dim)
+            nn.init.normal_(table, 0, 0.02, generator=generator)
+            self.slot_embeddings[spec.name] = nn.Parameter(table)
         for spec in schema.features:
+            roles = schema.player_role_indices(spec)
+            if roles is not None:
+                if self.role_indices is None:
+                    self.role_indices = torch.tensor(roles, dtype=torch.long)
+                gates = nn.Embedding(1 + max(map(max, roles)), dim)
+                nn.init.normal_(gates.weight, 1.0, 0.1, generator=generator)
+                self.role_gates[spec.name] = gates
             if spec.modality is Modality.COEFFICIENT:
                 table = nn.Embedding(spec.vocab_size, dim, padding_idx=0)
                 with torch.no_grad():
@@ -73,39 +103,57 @@ class SchemaEncoder(nn.Module):
         parameter = next(self.parameters(), None)
         return parameter.device if parameter is not None else torch.device("cpu")
 
+    def visible_fields(self, batch: FeatureBatch) -> tuple:
+        """Fields legal at this batch's prediction time (single predicate)."""
+        return tuple(spec for spec, _ in batch.scoring_fields(self.schema))
+
     def forward(self, batch: FeatureBatch) -> ModelInputs:
         device = self.device
         B = batch.batch_size
         S, N, D = self.schema.sides, self.schema.players, self.dim
         tokens = torch.zeros(B, S, N, D, device=device)
-        for spec in self.schema.features:
-            # PRE_MATCH features only: POST_MATCH fields are labels by contract.
-            if spec.available is Availability.POST_MATCH:
-                continue
-            local = self._encode(spec, batch, device)        # [B, s_eff, n_eff, D]
-            s_eff, n_eff = local.shape[1], local.shape[2]
-            if s_eff == 1 and S > 1:
-                local = local.expand(B, S, n_eff, D)
-            if n_eff == 1 and N > 1:
-                local = local.expand(B, S, N, D)
-            tokens = tokens + local
+        for spec, observed in batch.scoring_fields(self.schema):
+            local = self._encode(spec, batch, observed)     # [B, s_eff, n_eff, D]
+            if spec.name in self.role_gates:
+                local = local * self.role_gates[spec.name](self.role_indices)
+            tokens = tokens + local                        # broadcast MATCH and TEAM fields
 
         valid = torch.ones(B, S, N, dtype=torch.bool, device=device)
-        for spec in self.schema.features:
-            if spec.mask and spec.scope is Scope.PLAYER and spec.available is not Availability.POST_MATCH:
-                mask = _tensor(batch.masks[spec.name], device=device, dtype=torch.bool)
-                valid = valid & mask.any(-1)
-
+        for side, size in enumerate(self.schema.side_sizes):
+            if size < N:
+                valid[:, side, size:] = False
         denom = valid.sum(2, keepdim=True).clamp(min=1)
         team = (tokens * valid.unsqueeze(-1)).sum(2) / denom
-        match = team.mean(1)
+        match = self._pool_sides(team)
         return ModelInputs(tokens, valid, match, team, self.schema)
 
-    def _encode(self, spec, batch, device):
-        field = _tensor(batch.fields[spec.name], device=device)
+    @property
+    def uses_signed_sides(self) -> bool:
+        """Whether swapping the teams reverses the declared outcome order."""
+        task = self.schema.task
+        return (
+            self.schema.exchangeable_sides
+            and task.resolved_orientation is Orientation.ANTISYMMETRIC
+            and task.kind in {"binary", "multiclass", "ordinal"}
+        )
+
+    def _pool_sides(self, team):
+        if self.uses_signed_sides:
+            return team[:, 0] - team[:, 1]
+        if self.side_projection is not None:
+            return self.side_projection(team.flatten(1))
+        return team.mean(1)
+
+    def _encode(self, spec, batch, observed):
+        device = self.device
+        mask = None if observed is None else _tensor(observed, device=device, dtype=torch.bool)
         if spec.modality is Modality.COEFFICIENT:
-            embedded = self.embeddings[spec.name](field.long())     # [..., T, C, D]
+            ids = _tensor(batch.fields[spec.name], device=device, dtype=torch.long)
             weight = _tensor(batch.weights[spec.name], device=device)
+            if mask is not None:
+                ids = ids.masked_fill(~mask.unsqueeze(-1), 0)
+                weight = weight.masked_fill(~mask.unsqueeze(-1), 0)
+            embedded = self.embeddings[spec.name](ids)
             weighted = embedded * weight.unsqueeze(-1)
             pooled = weighted.sum(dim=(3, 4))                        # [B, s, n, D]
             if spec.reduce == "mean":
@@ -113,26 +161,140 @@ class SchemaEncoder(nn.Module):
                 pooled = pooled / count.to(pooled.dtype)
             return pooled
 
-        projection = self.projections[spec.name]
+        field = _tensor(batch.fields[spec.name], device=device)
+        if mask is not None:
+            field = field.masked_fill(~mask.unsqueeze(-1), 0)
+        if spec.signed_channels:
+            # For example, rating difference changes sign, but map/mode does not.
+            opponent = field.clone()
+            opponent[..., list(spec.signed_channels)] *= -1
+            field = torch.cat((field, opponent), dim=1)
+        projected = self.projections[spec.name](field)
         if spec.modality is Modality.SEQUENCE:
-            projected = projection(field)                            # [B, s, n, T, D]
-            if spec.mask:
-                mask = _tensor(batch.masks[spec.name], device=device, dtype=torch.bool)
-                projected = projected * mask.unsqueeze(-1).to(projected.dtype)
-                count = mask.sum(-1, keepdim=True).clamp(min=1)
-            else:
-                count = torch.tensor(field.shape[-2], device=device)
+            if spec.resolved_structure is Structure.ORDERED:
+                slots = self.slot_embeddings[spec.name]               # [T, D]
+                projected = projected * (1 + slots)
+            count = mask.sum(-1, keepdim=True).clamp(min=1)
             return projected.sum(-2) / count.to(projected.dtype)
-        return projection(field).squeeze(-2)                         # DENSE: T == 1
+        return projected.squeeze(-2)                                 # DENSE: T == 1
+
+
+class _ReversibleClassHead(nn.Module):
+    """Reversing teams reverses class logits; a middle draw logit is invariant."""
+
+    def __init__(self, dim, classes):
+        super().__init__()
+        self.pairs = classes // 2
+        self.advantage = nn.Linear(dim, self.pairs, bias=False)
+        self.baseline = nn.Linear(2 * dim, classes - self.pairs)
+
+    def forward(self, teams):
+        difference = teams[:, 0] - teams[:, 1]
+        advantage = self.advantage(difference)
+        context = torch.cat((teams.mean(1), difference.abs()), dim=-1)
+        baseline = self.baseline(context)
+        paired, middle = baseline[:, :self.pairs], baseline[:, self.pairs:]
+        return torch.cat((paired - advantage, middle, (paired + advantage).flip([-1])), dim=-1)
 
 
 def make_head(spec: OutputSpec, in_dim: int) -> nn.Module:
-    """Build the output head declared by an :class:`OutputSpec`."""
-    if spec.kind in {"binary", "regression", "assignment"}:
-        return nn.Linear(in_dim, 1)
-    if spec.kind in {"multiclass", "ordinal"}:
-        return nn.Linear(in_dim, spec.dim)
+    """Build the output head declared by an :class:`OutputSpec`.
+
+    The binary signed-difference head has no bias. SchemaModel uses a
+    two-team head when ordered class logits must reverse on side swap.
+    """
+    signed = (
+        spec.kind == "binary"
+        and spec.resolved_orientation is Orientation.ANTISYMMETRIC
+    )
+    bias = not signed
+    if spec.kind in {"binary", "assignment"}:
+        return nn.Linear(in_dim, 1, bias=bias)
+    if spec.kind in {"multiclass", "ordinal", "regression"}:
+        return nn.Linear(in_dim, spec.dim, bias=bias)
     raise ValueError(f"Unsupported output kind: {spec.kind}")
+
+
+def make_criterion(spec: OutputSpec):
+    """Derive the loss from `OutputSpec.criterion()` -- no hand-written switch."""
+    name = spec.criterion()
+    if name == "bce_with_logits":
+        return nn.BCEWithLogitsLoss()
+    if name == "cross_entropy":
+        return nn.CrossEntropyLoss()
+    if name == "mse":
+        return nn.MSELoss()
+    raise ValueError(f"No canonical loss declared for {spec.kind}")
+
+
+def criterion_targets(spec: OutputSpec, targets, device=None):
+    """Shape raw targets to match the derived loss."""
+    tensor = _tensor(targets, dtype=None, device=device)
+    if spec.criterion() == "cross_entropy":
+        # Accept class indices [B] or one-hot / soft labels [B, dim].
+        if tensor.ndim == 2 and tensor.shape[1] == spec.dim:
+            return tensor.float()
+        return tensor.reshape(-1).long()
+    return tensor.reshape(-1, spec.dim).float()
+
+
+def swap_sides(schema: FeatureSchema, batch: FeatureBatch):
+    """Augment a two-sided batch by swapping sides, flipping labels if needed.
+
+    For an antisymmetric target (left_win) the binary label is inverted; for
+    three-class WDL the loss/draw/win indices are reversed. Returns a new
+    FeatureBatch with the S axis reversed and transformed targets.
+    """
+    schema.require_compatible(batch)
+    if not schema.exchangeable_sides:
+        raise ValueError("swap_sides requires two equal-sized exchangeable sides")
+    # Only fields whose canonical S axis is 2 carry side information. MATCH
+    # fields must keep their time axis untouched.
+    sided = {
+        f.name: f.scope in (Scope.TEAM, Scope.PLAYER)
+        for f in schema.features
+    }
+    fields, weights, masks = {}, {}, {}
+    for name, value in batch.fields.items():
+        arr = np.asarray(value)
+        fields[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
+    for spec in schema.features:
+        if spec.signed_channels:
+            fields[spec.name][..., list(spec.signed_channels)] *= -1
+    for name, value in batch.weights.items():
+        arr = np.asarray(value)
+        weights[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
+    for name, value in batch.masks.items():
+        arr = np.asarray(value)
+        masks[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.shape[1] == 2 else arr.copy()
+    targets = batch.targets
+    orientation = schema.task.resolved_orientation
+    if targets is not None and orientation is Orientation.ANTISYMMETRIC:
+        t = np.asarray(targets).copy()
+        if schema.task.kind == "binary":
+            t = 1.0 - t
+        elif schema.task.kind in {"multiclass", "ordinal"}:
+            # Reverse the ordered label axis: loss<->win, draw stays put for
+            # three classes; for other widths the center class is fixed.
+            if t.ndim == 2 and t.shape[1] == schema.task.dim:
+                t = t[:, ::-1].copy()
+            else:
+                t = (schema.task.dim - 1) - t
+        targets = t
+    timed = {}
+    from .schema import resolve_timed_specs
+    resolved, unknown = resolve_timed_specs(schema, batch.available_at)
+    if unknown:
+        raise ValueError(f"available_at refers to unknown feature(s): {sorted(unknown)}")
+    for name, value in resolved.items():
+        arr = np.asarray(value)
+        timed[name] = np.flip(arr, axis=1).copy() if sided.get(name) and arr.ndim >= 2 and arr.shape[1] == 2 else arr.copy()
+    return FeatureBatch(
+        schema=batch.schema, fields=fields, weights=weights, masks=masks,
+        available_at=timed, prediction_time=batch.prediction_time,
+        targets=as_array(targets) if targets is not None else None,
+        batch_size=batch.batch_size,
+    )
 
 
 class SchemaModel(nn.Module):
@@ -154,10 +316,25 @@ class SchemaModel(nn.Module):
         super().__init__()
         self.schema = schema
         self.encoder = SchemaEncoder(schema, dim=dim, seed=seed)
-        self.head = make_head(schema.task, dim)
+        if self.encoder.uses_signed_sides and schema.task.kind in {"multiclass", "ordinal"}:
+            self.head = _ReversibleClassHead(dim, schema.task.dim)
+        elif not schema.exchangeable_sides and schema.task.kind in {"binary", "multiclass", "ordinal"}:
+            self.head = nn.Linear(dim, 1 if schema.task.kind == "binary" else schema.task.dim)
+        else:
+            self.head = make_head(schema.task, dim)
+
+    def get_extra_state(self):
+        """Keep label order, role layout and declared vocabulary identity with the weights."""
+        return self.schema.content_hash()
+
+    def set_extra_state(self, state):
+        if state != self.schema.content_hash():
+            raise ValueError("Feature contract mismatch between checkpoint and model")
 
     def forward(self, batch: FeatureBatch):
         inputs = self.encoder(batch)
+        if isinstance(self.head, _ReversibleClassHead):
+            return self.head(inputs.team_context)
         return self.head(inputs.match_context)
 
     def predict_proba(self, batch: FeatureBatch):
@@ -169,6 +346,18 @@ class SchemaModel(nn.Module):
         if task.kind in {"multiclass", "ordinal"}:
             return torch.softmax(logits, dim=-1)
         return logits
+
+    def criterion(self):
+        """Loss derived from the declared OutputSpec."""
+        return make_criterion(self.schema.task)
+
+    def targets(self, batch: FeatureBatch):
+        self.schema.require_compatible(batch)
+        return criterion_targets(self.schema.task, batch.targets, device=self.encoder.device)
+
+    def augmented_batch(self, batch: FeatureBatch):
+        """Side-swap augmentation consistent with the declared orientation."""
+        return swap_sides(self.schema, batch)
 
 
 def make_model_from_schema(schema: FeatureSchema, *, dim: int = 16, seed: int = 0) -> SchemaModel:

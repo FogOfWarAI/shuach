@@ -8,6 +8,15 @@ GameMatch 是面向竞技游戏的 Python 研究库。给定一个小大厅，�
 
 [中文入门](docs/start-zh.md) · [中文 API 指南](docs/api-zh.md) · [Python API in English](docs/api.md) · [命令行参考](docs/cli.md) · [文档目录](docs/README.md)
 
+## 框架概览
+
+```mermaid
+flowchart TD
+    A["历史对局"] --> B["特征契约"] --> C["胜负预测模型"] --> D["为候选分队评分"]
+    E["大厅、组排与角色要求"] --> F["生成可行分队"] --> D
+    D --> G["选择分队方案"] --> H["评估与报告"]
+```
+
 ## 快速使用
 
 在包含本版 `pyproject.toml` 的目录用 Python 3.10+ 安装。以下示例只需要基础依赖，使用 CPU 和生成的数据。

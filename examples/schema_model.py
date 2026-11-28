@@ -41,56 +41,54 @@ def resolve(name: str):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="hero-roster", help="catalog profile or schema key")
-    parser.add_argument("--dim", type=int, default=16, help="embedding width")
-    parser.add_argument("--steps", type=int, default=20, help="training steps (demo only)")
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--config", type=str, help="JSON SchemaTrainConfig (schema_training block)")
+    parser.add_argument("--dim", type=int, help="embedding width (overrides config)")
+    parser.add_argument("--steps", type=int, help="training steps (overrides config epochs)")
+    parser.add_argument("--seed", type=int, help="random seed (overrides config)")
     args = parser.parse_args(argv)
+
+    from gamematch.schema_config import load_schema_train_config
+
+    overrides = {k: v for k, v in {
+        "dim": args.dim, "seed": args.seed, "epochs": args.steps,
+    }.items() if v is not None}
+    config = load_schema_train_config(
+        args.config or "examples/schema-train.json", overrides=overrides
+    )
 
     schema = resolve(args.profile)
     from gamematch.features import make_model_from_schema
 
-    torch.manual_seed(args.seed)
-    model = make_model_from_schema(schema, dim=args.dim, seed=args.seed)
+    torch.manual_seed(config.seed)
+    model = make_model_from_schema(schema, dim=config.dim, seed=config.seed)
     task = schema.task
+    print(f"config: epochs={config.epochs} batch={config.batch_size} lr={config.learning_rate} dim={config.dim} seed={config.seed}")
 
     # Contract-derived, reproducible batches -- no hand-written tensor shapes.
-    train = sample_inputs(schema, batch=16, seed=args.seed)
-    test = sample_inputs(schema, batch=8, seed=args.seed + 1)
+    train = sample_inputs(schema, batch=config.batch_size, seed=config.seed)
+    test = sample_inputs(schema, batch=max(2, config.batch_size // 2), seed=config.seed + 1)
 
-    # Targets come from the batch when a POST_MATCH feature provides them,
-    # otherwise from the OutputSpec declaration (most schemas have no label
-    # feature -- the target is an external column in real benchmarks).
-    def labels(batch):
-        if batch.targets is not None:
-            return batch.targets
-        n = batch.batch_size
-        if task.kind == "binary":
-            return (torch.arange(n) % 2).float().numpy()
-        if task.kind in {"multiclass", "ordinal"}:
-            return (torch.arange(n) % max(2, task.dim)).numpy()
-        return (torch.arange(n) % 5).astype("float32") / 5.0
+    # The loss and target shape are derived from OutputSpec -- no switch here.
+    if task.criterion() == "none":
+        raise SystemExit(
+            f"{schema.name} declares an assignment head with no canonical loss; "
+            "supply an objective explicitly (see docs/feature-schema.md)."
+        )
+    loss_fn = model.criterion()
+    y = model.targets(train)
 
-    if task.kind == "binary":
-        loss_fn = torch.nn.BCEWithLogitsLoss()
-        y = torch.as_tensor(labels(train), dtype=torch.float32).reshape(-1, 1)
-    elif task.kind in {"multiclass", "ordinal"}:
-        loss_fn = torch.nn.CrossEntropyLoss()
-        y = torch.as_tensor(labels(train), dtype=torch.int64).reshape(-1)
-    else:
-        loss_fn = torch.nn.MSELoss()
-        y = torch.as_tensor(labels(train), dtype=torch.float32).reshape(-1, 1)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
-    print(f"schema={schema.name} task={task.kind}/{task.link} features={len(schema.features)}")
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
+    print(f"schema={schema.name} task={task.kind}/{task.link} "
+          f"criterion={task.criterion()} orientation={task.resolved_orientation.value} "
+          f"features={len(schema.features)}")
     print(f"trainable params={sum(p.numel() for p in model.parameters()):,}")
     model.train()
-    for step in range(args.steps):
+    for step in range(config.epochs):
         optimizer.zero_grad()
-        logits = model(train)
-        loss = loss_fn(logits, y)
+        loss = loss_fn(model(train), y)
         loss.backward()
         optimizer.step()
-        if step == 0 or step == args.steps - 1:
+        if step == 0 or step == config.epochs - 1:
             print(f"step {step + 1:>3}: loss={loss.item():.4f}")
 
     model.eval()
