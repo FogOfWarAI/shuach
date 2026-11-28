@@ -1,0 +1,14 @@
+{
+  "schema_training": {
+    "epochs": 20,
+    "batch_size": 64,
+    "learning_rate": 0.01,
+    "weight_decay": 0.0,
+    "patience": 5,
+    "dim": 16,
+    "seed": 0,
+    "device": "cpu",
+    "threads": 2
+  },
+  "note": "Optimization settings for the declarative SchemaModel path only. Schema semantics (structure, orientation, head, timing) come from FeatureSchema, never from this file."
+}

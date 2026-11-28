@@ -1,5 +1,77 @@
 # Change log
 
+## Unreleased — reproducible contracts, fair comparisons and training config
+
+- Record feature-contract identity in run artifacts: `content_hash()` is a
+  stable sha256 of canonical declaration JSON (documentation fields and
+  default layouts excluded); `provenance()` reports field sources;
+  `plan_outcomes()` returns a `schema_audit` and `run_outcomes()` writes it to
+  `schema_audit.json` only after the runner accepts the output directory.
+- Declare fair multi-model inputs: `comparability.input_contract()` /
+  `assert_comparable()` compare dataset, data-derived split hash, vocabulary
+  (size + hashed values), schema hash and timing rule; `runner.py` persists
+  `input-contract.json` per dataset.
+- Add `SchemaTrainConfig` + `load_schema_train_config()` for the declarative
+  path (optimization settings only, never schema semantics) with JSON example
+  and `gamematch schema-train --config ...` validation entry point.
+- Declare per-side team sizes: `players_per_side` / `side_sizes` /
+  `exchangeable_sides`; unequal or multi-team layouts disable signed pooling,
+  bias-free heads and side-swap; padded slots are excluded from pooling and
+  from vocabulary checks.
+- Post-iteration review fixes: mask-before-padding order in `validate_ids`,
+  data-derived split hash, CLI config validation, hash normalization.
+- 311 tests pass; ruff clean; coverage 91%; wheel/sdist inspection passed.
+
+## Unreleased — data-time vocabulary checks and documented layer boundary
+
+- Add `validate_ids()` / `vocabulary_requirements()` to check raw participant
+  IDs against declared coefficient vocabularies once at the adapter boundary.
+  Padding and masked-out slots are excluded, so unequal teams padded to a
+  common slot count are validated on real participants only. A mid-training
+  `nn.Embedding` `IndexError` now becomes a named adapter error.
+- Document the boundary between the decision layer (unequal teams, role slots,
+  party constraints, budgeted search) and the input layer (fixed N per side,
+  padding). Explain that `Orientation.ANTISYMMETRIC` is only meaningful for
+  two exchangeable sides.
+- Add 5 vocabulary validation tests. 288 tests pass.
+
+## Unreleased — consistency review and framework design guide
+
+- Align timing evaluation across `schema.at()` and `FeatureBatch.validate()`:
+  shared key resolution (declared name or legacy feature name), scalar
+  prediction-time broadcast, per-row alignment and observed-step masking.
+  The reference encoder now applies the same visibility rule as the trainable
+  bridge, and pools only valid players.
+- Make declared behaviour honest: multi-class WDL now receives a side-sensitive
+  context with reversed labels under swap; ordered-class augmentation reverses
+  any label width; `swap_sides` flips only sided fields and never a MATCH time
+  axis; `regression` with `dim>1` and one-hot class targets are handled; TEAM
+  dense fields no longer create dead slot parameters; unimplemented `reduce`
+  values (`max`, `last`) are rejected at declaration.
+- JSON keeps raw declarations so round-trips are idempotent; `from_dict`
+  infers `dim` from labels when omitted. Add 14 consistency regression tests.
+- Add `docs/feature-framework-design.md` with an architecture diagram
+  (`docs/assets/feature-framework.svg`) explaining the flow from declaration
+  to model. 283 tests pass; coverage stays at 90%.
+
+## Unreleased — time evaluation, structure semantics, derived behaviour
+
+- Replace the PRE/POST match binary with one predicate:
+  ``FeatureSchema.at(t)`` evaluates ``available_at < prediction_time`` and
+  returns the observable fields. Post-game inputs (Dota snapshots) stay legal
+  inputs for a post-game prediction time instead of being deleted by
+  ``predictor_schema``. Labels are declared only by ``OutputSpec``.
+- Add ``Structure`` (set / ordered / single) so pooling is derived from the
+  inductive bias: ordered sequences get learnable slot embeddings, and
+  ``OutputSpec.orientation`` drives signed side pooling plus bias-free heads
+  for binary win/loss and side-swap augmentation with label reversal.
+- Derive the loss and target shape from ``OutputSpec`` via ``model.criterion()``
+  / ``model.targets()``; examples no longer contain a loss switch.
+- Remove the declared-but-unused ``transform`` field. Old JSON configs with
+  ``available`` / ``transform`` keys still load; the keys are ignored.
+- Fix natural-shaped mask lifting so all nine modality x scope cells work,
+  including MATCH x SEQUENCE. 269 tests pass; coverage stays at 90%.
+
 ## Unreleased — unified contracts, temporal assertions, decision intervals
 
 - Bridge declarative schemas to trainable models: `SchemaEncoder` / `SchemaModel`

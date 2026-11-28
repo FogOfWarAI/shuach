@@ -10,6 +10,15 @@ Machine learning for balanced multiplayer matchmaking.
 
 Given a lobby, which teams should play each other? Shuach lets you score possible lineups, keep parties together, fill role slots, and compare feasible assignments. You can train outcome predictors on historical games, replay player ratings in time order, and measure the quality of assignment decisions on synthetic lobbies with a known outcome mechanism.
 
+## Framework
+
+```mermaid
+flowchart TD
+    A["Historical matches"] --> B["Feature schema"] --> C["Outcome model"] --> D["Score candidate teams"]
+    E["Lobby, parties and roles"] --> F["Generate feasible teams"] --> D
+    D --> G["Select assignment"] --> H["Evaluate and report"]
+```
+
 ## Run your first match
 
 From the repository root, create and activate a Python 3.10+ virtual environment. On Windows PowerShell use `.\.venv\Scripts\Activate.ps1`; on macOS or Linux use `source .venv/bin/activate` after creating the environment.

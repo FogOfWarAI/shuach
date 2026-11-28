@@ -1,0 +1,49 @@
+<svg viewBox="0 0 680 320" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Unified feature framework data flow</title>
+<desc>Six stages from declaring a FeatureSchema, lifting natural arrays, evaluating time visibility, encoding with structure-aware pooling, producing ModelInputs, to deriving the head, loss and augmentation from OutputSpec.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+<text x="40" y="30" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Contract and data</text>
+<g>
+<rect x="40" y="44" width="180" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text x="130" y="66" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#0C447C">1. Declare schema</text>
+<text x="130" y="86" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#185FA5">FeatureSpec on four axes</text>
+</g>
+<g>
+<rect x="250" y="44" width="180" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text x="340" y="66" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#0C447C">2. Lift arrays</text>
+<text x="340" y="86" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#185FA5">Natural to [B,S,N,T,C]</text>
+</g>
+<g>
+<rect x="460" y="44" width="180" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text x="550" y="66" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#0C447C">3. Evaluate time</text>
+<text x="550" y="86" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#185FA5">at(t), one predicate</text>
+</g>
+<text x="40" y="160" font-family="sans-serif" font-size="14" font-weight="500" fill="#2C2C2A">Model and derived behaviour</text>
+<g>
+<rect x="460" y="174" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text x="550" y="196" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#085041">4. Encode</text>
+<text x="550" y="216" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#0F6E56">structure drives pooling</text>
+</g>
+<g>
+<rect x="250" y="174" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text x="340" y="196" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#085041">5. ModelInputs</text>
+<text x="340" y="216" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#0F6E56">tokens, valid, contexts</text>
+</g>
+<g>
+<rect x="40" y="174" width="180" height="56" rx="8" fill="#E1F5EE" stroke="#1D9E75" stroke-width="0.5"/>
+<text x="130" y="196" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="14" font-weight="500" fill="#085041">6. Derive output</text>
+<text x="130" y="216" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#0F6E56">head, loss, augmentation</text>
+</g>
+<path d="M220 72 L242 72" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M430 72 L452 72" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M550 100 L550 166" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M460 202 L438 202" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M250 202 L228 202" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="40" y="256" width="600" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="340" y="272" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#444441">Labels live only in OutputSpec, never among input features.</text>
+<text x="340" y="289" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-size="12" fill="#444441">The same schema drives validation, encoding, training and reporting.</text>
+</svg>

@@ -379,6 +379,26 @@ def run_benchmark(config_path: Path, workspace: Path, output: Path):
                     for field in ["row_ids", "groups"]
                 },
             )
+            # All models below reuse this exact splits/vocabulary pair. Declare
+            # that invariant once and persist it so a comparison is auditable.
+            from .catalog import PROFILE_SCHEMA_KEYS
+            from .comparability import assert_comparable, input_contract, split_hash
+            from .features import SCHEMAS
+
+            schema_key = PROFILE_SCHEMA_KEYS.get("hero-roster")
+            schema_hash = SCHEMAS[schema_key].content_hash() if schema_key else None
+            shared_kwargs = dict(
+                dataset=dataset,
+                split_fingerprint=split_hash(data_manifest),
+                vocabulary=vocabulary,
+                schema_hash=schema_hash,
+                timing_rule="observed_prediction",
+            )
+            contract = assert_comparable(
+                {model: input_contract(**shared_kwargs) for model in raw["models"]},
+                raw["models"],
+            )
+            write_json(dataset_dir / "input-contract.json", contract)
             for seed in raw["seeds"]:
                 for model in raw["models"]:
                     directory = dataset_dir / f"seed-{seed}-{model}"
