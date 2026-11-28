@@ -13,14 +13,34 @@ Given a lobby, which teams should play each other? Shuach lets you score possibl
 ## Framework
 
 ```mermaid
-flowchart TD
-    T["Task selection · CLI command and protocol"] --> A["Data processing · load and split"]
-    A --> B["Feature inputs · adapter or feature schema"]
-    B --> C["Select and train a supported model"]
-    C --> P["Held-out predictions"] --> H["Prediction evaluation · protocol metrics"]
-    C --> D["Score candidate teams"]
-    E["Lobby, parties and roles"] --> F["Generate feasible teams"] --> D
-    D --> G["Select assignment"] --> R["Synthetic decision evaluation · regret"]
+flowchart TB
+    subgraph task["Task selection"]
+        taskStep["Choose the protocol and target"]
+    end
+    subgraph data["Data processing"]
+        dataStep["Load matches and split the data"]
+    end
+    subgraph features["Feature inputs"]
+        featuresStep["Map fields and apply timing rules"]
+    end
+    subgraph model["Model training"]
+        modelStep["Select a compatible model and fit"]
+    end
+    subgraph evaluation["Evaluation"]
+        prediction["Prediction quality<br/>Held-out loss and calibration"]
+        assignment["Assignment quality<br/>Candidate search and decision regret"]
+    end
+    taskStep --> modelStep
+    dataStep --> featuresStep --> modelStep
+    modelStep --> prediction
+    modelStep --> assignment
+    style task fill:#f5f3ff,stroke:#7755aa,color:#182538,stroke-width:2px
+    style data fill:#eff6ff,stroke:#4676a8,color:#182538,stroke-width:2px
+    style features fill:#ecfdf5,stroke:#408269,color:#182538,stroke-width:2px
+    style model fill:#fff7ed,stroke:#ac7033,color:#182538,stroke-width:2px
+    style evaluation fill:#f1f5f9,stroke:#52647b,color:#182538,stroke-width:2px
+    classDef content fill:#ffffff,stroke:#788697,color:#182538
+    class taskStep,dataStep,featuresStep,modelStep,prediction,assignment content
 ```
 
 Benchmark configurations select data and models supported by the protocol, which determines the evaluation metrics. For schema-based models, a profile selects the features and prediction target. Custom data needs a mapping from source fields to those inputs.
