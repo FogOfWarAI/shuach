@@ -47,7 +47,7 @@ agree with the earlier exploratory table. Reusing validation labels for both
 regularization selection and reporting makes these exploratory results.
 
 The original `audit_rich_history.py` builds the feature cache and earlier probe.
-For a new recorded probe in a prepared research workspace, use a new output:
+To record a new probe, choose a fresh output directory:
 
 ```bash
 GAMEMATCH_PROBE_OUTPUT=reports/richer-history/my-probe \
@@ -69,9 +69,8 @@ cap and validation stopping under a fixed configuration. Cells run in seed-major
 order without outcome-based pruning. Input width and readout change parameter
 counts even though optimizer and epoch budgets are shared.
 
-All thirty fits have completed in the parent research workspace as of 15 November
-2026. The complete export is `reports/richer-history/neural-comparison/`.
-It contains two neural input sets; the sequence-only and static-only ablations
+All thirty fits have completed. The complete neural comparison export
+contains two neural input sets; the sequence-only and static-only ablations
 above are Logistic probes. Complete declared seed sets are required for comparisons.
 The enhanced tensors have also
 passed CPU forward/backward checks with History Deep Sets, Transformer, OwO

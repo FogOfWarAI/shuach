@@ -15,6 +15,8 @@ gamematch --version
 
 上述激活命令适用于 macOS 和 Linux。使用 Windows PowerShell 时，激活命令是 `.\.venv\Scripts\Activate.ps1`。当前开发版显示 `gamematch 0.1.0rc5.dev3`。只有 wheel 时，在虚拟环境里用 pip 安装本地的 `.whl` 文件即可；下面的 Python 示例也可直接运行。
 
+基础安装不含 PyTorch，已足够运行目录、特征契约和 CPU 分队示例：`gamematch feature-schema --profile overwatch-history`、`gamematch lobby-approx --players 20 --time-budget 1`。训练与评估命令需要执行 `python -m pip install -e '.[neural]'`。
+
 ## 给四个人分队
 
 小林、小周、小何、小陈的评分分别是 8、7、3、2。下面枚举所有两人对两人的方案，目标是让两队总分尽可能接近。

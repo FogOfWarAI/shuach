@@ -536,7 +536,7 @@ def latex(entries):
         r"\bottomrule\end{tabular}",
         r"\caption{Specialist-search multi-metric results. Probability RMSE uses the three-class one-hot vector; score MAE uses loss/draw/win values 0, 1/2, 1.}\end{table}",
     ]
-    (ROOT / "manuscript/tables/specialist-metrics.tex").write_text("\n".join(lines) + "\n")
+    (OUT / "specialist-metrics.tex").write_text("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":

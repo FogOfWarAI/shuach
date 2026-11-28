@@ -96,7 +96,3 @@ separate information-set contrasts. A model's higher score with additional field
 does not isolate an architecture effect. Results from different tasks must not
 share an overall ACC ranking.
 
-Suggested manuscript wording: “Outcome prediction includes roster-based, player-
-history-based and domain-conditioned estimators. Model compatibility is defined
-by the input contract; executable adapter coverage is reported separately. OwO
-and DAWN are public-data outcome-model adaptations, not isolated task categories.”

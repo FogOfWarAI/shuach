@@ -7,7 +7,7 @@ Compatibility describes the current implementation, not measured performance or
 successful reproduction of a paper. No data are loaded by this module.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,24 @@ class InputProfile:
     external_models: tuple[str, ...] = ()
     external_entry: str | None = None
     limitation: str = ""
+    feature_schema: str | None = None
+
+    @property
+    def executable_schema(self):
+        """Return the runtime FeatureSchema behind the legacy string label.
+
+        Unlike ``input_schema`` (a metadata string), this object drives tensor
+        validation, canonical layout and encoding. Import is local so catalog
+        stays usable when only the contract layer is installed.
+        """
+        if self.feature_schema is None:
+            raise ValueError(f"Profile {self.name!r} has no executable feature schema")
+        from .features import SCHEMAS
+
+        try:
+            return SCHEMAS[self.feature_schema]
+        except KeyError as exc:
+            raise ValueError(f"Unknown feature schema: {self.feature_schema}") from exc
 
 
 OUTCOME = "outcome_prediction"
@@ -236,6 +254,36 @@ PROFILES = {
         limitation="Post-game regression, not pre-game outcome prediction; no ACC metric.",
     ),
 }
+
+
+# Executable counterparts of the legacy ``input_schema`` strings. Adding a
+# feature now means editing one FeatureSpec in features/schema.py, not the
+# adapter, the model signature and the runner.
+PROFILE_SCHEMA_KEYS = {
+    "hero-roster": "hero_binary",
+    "overwatch-history": "overwatch_history",
+    "league-history": "league_history",
+    "asymmetric-context": "dbd_predator",
+    "overwatch-ratings": "overwatch_rating",
+    "future-rating": "dota_future_rating",
+}
+PROFILES = {
+    name: replace(profile, feature_schema=PROFILE_SCHEMA_KEYS[name])
+    for name, profile in PROFILES.items()
+}
+
+
+def feature_schema_for(name):
+    """Return the executable FeatureSchema for a profile ID.
+
+    Args:
+        name: A registered input profile ID such as ``overwatch-history``.
+
+    Returns:
+        A FeatureSchema whose declared modalities, scopes, timings and output
+        head can be inspected, validated and serialized without loading data.
+    """
+    return get_profile(name).executable_schema
 
 
 def get_model(name):

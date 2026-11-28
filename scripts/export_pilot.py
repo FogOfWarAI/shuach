@@ -13,7 +13,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run", type=Path)
     parser.add_argument("--output", type=Path, default=Path("reports/local-pilot"))
-    parser.add_argument("--latex", type=Path, default=Path("manuscript/tables/pilot.tex"))
+    parser.add_argument("--latex", type=Path, default=Path("reports/local-pilot/pilot.tex"))
     args = parser.parse_args()
     manifest = json.loads((args.run / "manifest.json").read_text())
     if manifest["status"] != "completed" or manifest["config"]["protocol"] != "pilot":
