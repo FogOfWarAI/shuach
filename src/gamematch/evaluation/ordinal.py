@@ -2,6 +2,7 @@
 """Ordinal prediction metrics."""
 
 import numpy as np
+
 from .multiclass import multiclass_metrics
 
 
