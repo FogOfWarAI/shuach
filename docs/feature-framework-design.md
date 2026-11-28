@@ -40,14 +40,14 @@ A `FeatureSpec` places one field on four independent axes:
 
 `structure` is the semantic axis. It is inferred when omitted:
 `MATCH → SINGLE`, `TEAM → ORDERED`, `PLAYER → SET`. Unlike a comment, it has
-behaviour: `SET` uses permutation-invariant pooling, `ORDERED` adds learnable
-slot embeddings on the time axis, and `SINGLE` needs no pooling.
+behaviour: `SET` uses permutation-invariant pooling, `ORDERED` applies
+position-dependent weights to sequence steps or static player slots, and
+`SINGLE` needs no pooling.
 
 One more declaration lives on the output side: `OutputSpec.orientation` says
 what happens when the two sides swap. `ANTISYMMETRIC` (win/loss, WDL) gives a
-side-sensitive context; `SYMMETRIC` and `NONE` use an invariant mean. This is
-what makes side-swap augmentation legal rather than a source of contradictory
-training pairs.
+side-sensitive context. Symmetric tasks use an invariant mean. Directional
+tasks with distinct sides use their ordered team representations.
 
 ## One canonical layout
 
@@ -110,11 +110,11 @@ Consequences worth remembering:
 
 | Declaration | Derived behaviour |
 | --- | --- |
-| `FeatureSpec.structure` | Pooling mode; learnable slot embeddings for ordered sequences |
+| `FeatureSpec.structure` | Pooling mode and content-dependent effects of ordered positions |
 | `OutputSpec.kind`, `link`, `dim` | Output head width and activation |
 | `OutputSpec.criterion()` | Loss (`BCEWithLogits`, `CrossEntropy`, `MSE`) |
 | `OutputSpec.orientation` | Signed side pooling, bias-free head where provable, side-swap label rule |
-| `schema.at(t)` | Which fields reach either encoder |
+| `schema.at(t)` | Batch-wide field visibility summary. Scoring applies the same cutoff per observation. |
 | `FeatureSchema` itself | Sample batches, validation report, CLI output, JSON round-trip |
 
 The point is not fewer lines of declaration. It is that a declaration cannot
@@ -152,29 +152,14 @@ The **decision layer is more general than the input layer**:
   the scorer is called on batches of feasible assignments rather than on a
   fixed roster tensor.
 
-The **input layer is rigid by comparison**: `FeatureSchema.sides` and
-`players` are single integers, so the canonical `[B,S,N,T,C]` gives every
-side the same `N`. Unequal teams currently fit by **padding to a common N**
-and relying on masks; role slots are not passed into a feature batch; and
-`Orientation.ANTISYMMETRIC` assumes exactly two exchangeable sides, so it is
-not meaningful for an unequal or multi-team assignment.
-
-The gap is now **declared rather than assumed**: `FeatureSchema.players_per_side`
-records real participant counts per side, and `exchangeable_sides` is true only
-for two equal-sized sides. Unequal or multi-team layouts disable signed side
-pooling, bias-free heads and `swap_sides`, and padded slots never enter pooling
-or vocabulary checks.
-
-Practical consequences:
-
-- Padding is not a participant: `validate_ids()` ignores the padding value
-  and any masked-out slot when checking a declared vocabulary, so a 3v5 lobby
-  padded to five slots per side does not consume five hero IDs.
-- Do not enable side-swap augmentation for unequal teams; the decision layer
-  already forbids it for the same reason.
-- A future input-layer upgrade would replace the scalar `players` with a
-  per-side tuple and let `N` be a padded maximum with masks. That is a schema
-  change, not a configuration option.
+The adapter places each assignment into canonical `[B,S,N,T,C]` order.
+`players_per_side` supplies the number of real participants and `N` is the
+padded maximum. `side_roles` identifies factions and `role_slots` identifies
+the role of each real player position. Equal role names share a gate.
+Two equal-sized sides with matching faction and slot declarations support
+side-swap augmentation. The solver additionally requires a swap-invariant
+objective before it can discard mirrored candidates. Party membership and
+role eligibility remain feasibility rules in the assignment generator.
 
 ## Current limits
 

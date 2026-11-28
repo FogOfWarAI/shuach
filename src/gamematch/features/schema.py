@@ -221,12 +221,18 @@ class FeatureSpec:
     description: str = ""
     source: str = ""                             # provenance: adapter / dataset column
     available: Availability | None = None        # DEPRECATED, ignored everywhere
+    vocabulary_values_sha256: str | None = None  # identity of the fitted ID mapping
+    signed_channels: tuple[int, ...] = ()        # MATCH/DENSE channels negated in the other side's view
 
     def __post_init__(self):
         if not self.name or not isinstance(self.name, str):
             raise ValueError("Feature name must be a nonempty string")
         if not isinstance(self.modality, Modality) or not isinstance(self.scope, Scope):
             raise ValueError("modality and scope must be enum members")
+        if type(self.mask) is not bool:
+            raise ValueError("mask must be a boolean")
+        if self.available_at is not None and (not isinstance(self.available_at, str) or not self.available_at):
+            raise ValueError("available_at must name a timestamp field")
         for key in ("width", "steps", "vocab_size"):
             if type(getattr(self, key)) is not int or getattr(self, key) < 0:
                 raise ValueError(f"{key} must be a nonnegative integer")
@@ -259,6 +265,18 @@ class FeatureSpec:
             raise ValueError("vocab_size is only valid for COEFFICIENT")
         if self.structure is not None and not isinstance(self.structure, Structure):
             raise ValueError("structure must be a Structure member or None")
+        digest = self.vocabulary_values_sha256
+        if digest is not None and (
+            self.modality is not Modality.COEFFICIENT or not isinstance(digest, str)
+            or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
+        ):
+            raise ValueError("vocabulary_values_sha256 requires a coefficient field and a SHA-256 hex digest")
+        if not isinstance(self.signed_channels, tuple) or self.signed_channels and (
+            self.scope is not Scope.MATCH or self.modality is not Modality.DENSE
+            or any(type(i) is not int or not 0 <= i < self.width for i in self.signed_channels)
+            or len(set(self.signed_channels)) != len(self.signed_channels)
+        ):
+            raise ValueError("signed_channels must be distinct channel indices on a dense match field")
 
     @property
     def key(self) -> tuple[str, str]:
@@ -308,6 +326,8 @@ class OutputSpec:
                 raise ValueError("dim must equal the number of labels")
         if self.kind == "binary" and self.labels and len(self.labels) != 2:
             raise ValueError("A binary head needs either no labels or exactly two")
+        if self.kind == "binary" and self.dim != 1:
+            raise ValueError("The binary head requires dim=1")
         if self.orientation is not None and not isinstance(self.orientation, Orientation):
             raise ValueError("orientation must be an Orientation member or None")
 
@@ -341,37 +361,68 @@ def resolve_timed_specs(schema, available_at):
     """
     resolved, unknown = {}, []
     for key, times in available_at.items():
-        spec = next(
-            (f for f in schema.features if key in {f.name, f.available_at}),
-            None,
-        )
-        if spec is None:
+        matches = [f for f in schema.features if key in (f.name, f.available_at)]
+        if not matches:
             unknown.append(key)
-        else:
+        for spec in matches:
+            if spec.name in resolved:
+                raise ValueError(f"Duplicate availability evidence for {spec.name}")
             resolved[spec.name] = times
     return resolved, unknown
 
 
-def timing_violations(schema, spec, times, prediction_time, batch, mask=None):
-    """Count observed steps where available_at >= prediction_time.
+def _participant_mask(schema, spec, batch, mask):
+    """Exclude padded players before inspecting their features or timestamps."""
+    if spec.scope is not Scope.PLAYER or min(schema.side_sizes) == schema.players:
+        return mask
+    shape = schema.canonical_shape(spec, batch)[:-1]
+    if _np is not None:
+        layout = _np.arange(schema.players) < _np.asarray(schema.side_sizes)[:, None]
+        real = _np.broadcast_to(layout[None, :, :, None], shape)
+        return real if mask is None else real & _np.asarray(mask, dtype=bool).reshape(shape)
+    coords = itertools.product(*(range(size) for size in shape))
+    flat = [n < schema.side_sizes[s] and (mask is None or bool(mask.flat[i]))
+            for i, (_, s, n, _) in enumerate(coords)]
+    return _LiteArray(flat, shape)
 
-    Shared by `SchemaView.evaluate` and `FeatureBatch.validate` so the two can
-    never disagree on keys, row alignment, scalar broadcasting or masks.
-    """
-    pt = _values(as_array(prediction_time))
-    if len(pt) == 1:
-        pt = pt * batch                     # scalar applies to every row
-    ts = _values(as_array(times))
-    observed = [bool(v) for v in _values(mask)] if mask is not None else [True] * len(ts)
-    per_row = math.prod(schema.canonical_shape(spec, batch)[1:4])
-    bad = 0
-    for i, (t, ok) in enumerate(zip(ts, observed)):
-        row = i // per_row
-        if row >= len(pt):
-            break
-        if ok and t >= pt[row]:
-            bad += 1
-    return bad
+
+def _timed_observations(schema, spec, times, prediction_time, batch, mask=None):
+    """Return a canonical visibility mask and count late observations, row by row."""
+    shape = schema.canonical_shape(spec, batch)[:-1]
+    natural = schema.natural_shape(spec, batch)[:-1]
+    ts, pt = as_array(times), as_array(prediction_time)
+    if ts.shape not in (natural, shape):
+        raise ValueError(f"{spec.name}: timestamps must have shape {natural} or {shape}, got {ts.shape}")
+    if pt.shape not in ((), (1,), (batch,)):
+        raise ValueError(f"prediction_time must be scalar or have one timestamp per row ({batch})")
+    if mask is not None:
+        mask = as_array(mask)
+        if mask.shape not in (shape, natural):
+            raise ValueError(f"{spec.name}: timestamp mask is not aligned")
+    mask = _participant_mask(schema, spec, batch, mask)
+    if _np is not None:
+        ts = ts.reshape(shape)
+        if ts.dtype.kind not in "iuf" or pt.dtype.kind not in "iuf":
+            raise ValueError(f"{spec.name}: timestamps must be real numbers")
+        observed = _np.ones(shape, dtype=bool) if mask is None else mask.reshape(shape).astype(bool, copy=False)
+        if not _np.isfinite(pt).all() or not _np.isfinite(ts[observed]).all():
+            raise ValueError(f"{spec.name}: nonfinite timestamp")
+        visible = observed & (ts < pt.reshape(-1, 1, 1, 1))
+        return visible, int(observed.sum() - visible.sum())
+
+    points = _values(pt)
+    if not _all_finite(points):
+        raise ValueError("nonfinite prediction_time")
+    per_row = math.prod(shape[1:])
+    visible, late = [], 0
+    for i, t in enumerate(ts.flat):
+        observed = mask is None or bool(mask.flat[i])
+        if observed and not math.isfinite(t):
+            raise ValueError(f"{spec.name}: nonfinite timestamp")
+        ok = observed and t < points[0 if len(points) == 1 else i // per_row]
+        visible.append(ok)
+        late += observed and not ok
+    return _LiteArray(visible, shape), late
 
 
 @dataclass(frozen=True)
@@ -417,7 +468,7 @@ class SchemaView:
                 # No evidence supplied -> refuse to invent visibility.
                 excluded[spec.name] = -1
                 continue
-            bad = timing_violations(
+            _, bad = _timed_observations(
                 source, spec, times, prediction_time, inferred_batch,
                 mask=mask_map.get(spec.name),
             )
@@ -451,6 +502,8 @@ class FeatureSchema:
     features: tuple[FeatureSpec, ...] = ()
     task: OutputSpec = field(default_factory=lambda: OutputSpec("win", "binary"))
     players_per_side: tuple[int, ...] | None = None  # None -> (players,) * sides
+    side_roles: tuple[str, ...] | None = None       # e.g. ("attacker", "defender")
+    role_slots: tuple[tuple[str, ...], ...] | None = None
 
     def __post_init__(self):
         if type(self.sides) not in (int,) or self.sides < 1:
@@ -467,6 +520,20 @@ class FeatureSchema:
                 raise ValueError("players must equal max(players_per_side)")
         if len({f.name for f in self.features}) != len(self.features):
             raise ValueError("Duplicate feature names")
+        if self.sides != 2 and any(f.signed_channels for f in self.features):
+            raise ValueError("signed_channels require two sides")
+        if self.side_roles is not None and (
+            not isinstance(self.side_roles, tuple) or len(self.side_roles) != self.sides
+            or any(not isinstance(r, str) or not r for r in self.side_roles)
+        ):
+            raise ValueError("side_roles must name each side")
+        if self.role_slots is not None and (
+            not isinstance(self.role_slots, tuple) or len(self.role_slots) != self.sides
+            or any(not isinstance(slots, tuple) or len(slots) != size
+                   or any(not isinstance(r, str) or not r for r in slots)
+                   for slots, size in zip(self.role_slots, self.side_sizes))
+        ):
+            raise ValueError("role_slots must name each real player slot on each side")
         # sides == 1 is legitimate (DBD predator, Dota focal player): the S axis
         # simply collapses. Scope never changes the allowed side count.
 
@@ -481,7 +548,20 @@ class FeatureSchema:
         return (
             len(self.side_sizes) == 2
             and self.side_sizes[0] == self.side_sizes[1]
+            and (self.side_roles is None or self.side_roles[0] == self.side_roles[1])
+            and (self.role_slots is None or self.role_slots[0] == self.role_slots[1])
         )
+
+    def player_role_indices(self, spec):
+        """Shared role indices on [side, player]; unnamed ordered slots use position."""
+        if spec.scope is not Scope.PLAYER:
+            return None
+        if self.role_slots is None:
+            if spec.structure is Structure.ORDERED and spec.modality is not Modality.SEQUENCE:
+                return [list(range(self.players)) for _ in self.side_sizes]
+            return None
+        ids = {name: i for i, name in enumerate(sorted({r for side in self.role_slots for r in side}))}
+        return [[ids[r] for r in side] + [0] * (self.players - len(side)) for side in self.role_slots]
 
     # -- shape algebra -----------------------------------------------------
 
@@ -532,6 +612,8 @@ class FeatureSchema:
         return {
             "name": self.name, "sides": self.sides, "players": self.players,
             "players_per_side": list(self.players_per_side) if self.players_per_side else None,
+            **({"side_roles": list(self.side_roles)} if self.side_roles is not None else {}),
+            **({"role_slots": [list(s) for s in self.role_slots]} if self.role_slots is not None else {}),
             "task": {
                 "name": self.task.name, "kind": self.task.kind,
                 "labels": list(self.task.labels), "dim": self.task.dim,
@@ -549,6 +631,9 @@ class FeatureSchema:
                     "reduce": f.reduce,
                     "group": f.group, "description": f.description,
                     "source": f.source,
+                    **({"vocabulary_values_sha256": f.vocabulary_values_sha256}
+                       if f.vocabulary_values_sha256 is not None else {}),
+                    **({"signed_channels": list(f.signed_channels)} if f.signed_channels else {}),
                 }
                 for f in self.features
             ],
@@ -559,11 +644,22 @@ class FeatureSchema:
 
     @classmethod
     def from_dict(cls, data: dict) -> "FeatureSchema":
+        def check_keys(mapping, declaration, legacy=()):
+            if not isinstance(mapping, dict):
+                raise ValueError(f"{declaration.__name__} must be a JSON object")
+            unknown = mapping.keys() - declaration.__dataclass_fields__.keys() - set(legacy)
+            if unknown:
+                raise ValueError(f"Unknown {declaration.__name__} keys: {sorted(unknown)}")
+
+        check_keys(data, cls)
         task_data = data["task"]
+        check_keys(task_data, OutputSpec, ("transform",))
+        for feature in data["features"]:
+            check_keys(feature, FeatureSpec, ("transform",))
         labels = tuple(task_data.get("labels", ()))
         dim = task_data.get("dim")
         if dim is None:
-            dim = len(labels) if labels else 1
+            dim = len(labels) if task_data["kind"] in {"multiclass", "ordinal"} else 1
         task = OutputSpec(
             name=task_data["name"], kind=task_data["kind"],
             labels=labels, dim=dim,
@@ -585,14 +681,24 @@ class FeatureSchema:
                 ),
                 reduce=f.get("reduce", "sum"), group=f.get("group", ""),
                 description=f.get("description", ""), source=f.get("source", ""),
+                vocabulary_values_sha256=f.get("vocabulary_values_sha256"),
+                signed_channels=tuple(f.get("signed_channels", ())),
             )
             for f in data["features"]
         )
         pps = data.get("players_per_side")
+        side_roles, slots = data.get("side_roles"), data.get("role_slots")
+        if side_roles is not None and not isinstance(side_roles, (list, tuple)):
+            raise ValueError("side_roles must be a list of side names")
+        if slots is not None and (not isinstance(slots, (list, tuple))
+                                  or any(not isinstance(s, (list, tuple)) for s in slots)):
+            raise ValueError("role_slots must contain one list of role names per side")
         return cls(
             data["name"], data.get("sides", 2), data.get("players", 5),
             features, task,
-            players_per_side=tuple(pps) if pps else None,
+            players_per_side=tuple(pps) if pps is not None else None,
+            side_roles=tuple(side_roles) if side_roles is not None else None,
+            role_slots=tuple(tuple(s) for s in slots) if slots is not None else None,
         )
 
     def cells(self) -> dict[tuple[str, str], list[str]]:
@@ -644,7 +750,17 @@ class FeatureSchema:
             "undeclared_sources": [f.name for f in self.features if not f.source],
         }
 
+    def require_compatible(self, batch: "FeatureBatch"):
+        """Check the model's declared contract before interpreting a batch."""
+        if self is batch.schema:
+            return
+        expected, received = self.content_hash(), batch.schema.content_hash()
+        if expected != received:
+            raise ValueError(f"Feature contract mismatch: expected {self.name} {expected}, "
+                             f"received {batch.schema.name} {received}")
+
     def validate(self, batch: "FeatureBatch", *, strict_time: bool = True) -> dict:
+        self.require_compatible(batch)
         return batch.validate(strict_time=strict_time)
 
 
@@ -756,6 +872,42 @@ class FeatureBatch:
 
     # -- validation --------------------------------------------------------
 
+    def observation_masks(self, *, strict_time=False):
+        """Masks indexed by field, retaining visibility per candidate and observation."""
+        resolved, unknown = resolve_timed_specs(self.schema, self.available_at)
+        if unknown:
+            raise ValueError(f"available_at refers to unknown feature(s): {sorted(unknown)}")
+        masks = dict(self.masks)
+        for spec in self.schema.features:
+            if not spec.available_at and spec.name not in resolved:
+                layout = _participant_mask(self.schema, spec, self.batch_size, masks.get(spec.name))
+                if layout is not None:
+                    masks[spec.name] = layout
+                continue
+            times = resolved.get(spec.name)
+            if times is None or self.prediction_time is None:
+                if strict_time and (self.prediction_time is not None or times is not None):
+                    raise ValueError(f"{spec.name}: missing availability evidence or prediction_time")
+                masks[spec.name] = _array(self.schema.canonical_shape(spec, self.batch_size)[:-1],
+                                          False, dtype=bool)
+                continue
+            visible, late = _timed_observations(
+                self.schema, spec, times, self.prediction_time, self.batch_size, masks.get(spec.name)
+            )
+            if strict_time and late:
+                raise ValueError(f"{spec.name}: {late} observed step(s) not strictly earlier than prediction_time")
+            masks[spec.name] = visible
+        return masks
+
+    def scoring_fields(self, schema):
+        """Yield declared fields with at least one usable observation and their masks."""
+        schema.require_compatible(self)
+        masks = self.observation_masks()
+        for spec in schema.features:
+            mask = masks.get(spec.name)
+            if mask is None or (_np.any(mask) if _np is not None else any(mask.flat)):
+                yield spec, mask
+
     def validate(self, *, strict_time: bool = True) -> dict:
         schema, batch = self.schema, self.batch_size
         problems = []
@@ -765,13 +917,14 @@ class FeatureBatch:
             if tuple(arr.shape) != expected:
                 problems.append(f"{spec.name}: shape {tuple(arr.shape)} != {expected}")
                 continue
-            values = _values(arr)
+            layout = _participant_mask(schema, spec, batch, None)
+            values = _field_values(arr, layout)
             if spec.modality is Modality.COEFFICIENT:
                 vocab = spec.vocab_size
                 if any(not float(v).is_integer() or not (0 <= v < vocab) for v in values):
                     problems.append(f"{spec.name}: coefficient indices must be ints in [0,{vocab})")
                 w = self.weights.get(spec.name)
-                if w is None or tuple(w.shape) != expected or not _all_finite(_values(w)):
+                if w is None or tuple(w.shape) != expected or not _all_finite(_field_values(w, layout)):
                     problems.append(f"{spec.name}: coefficient weights missing or nonfinite")
             elif not _all_finite(values):
                 problems.append(f"{spec.name}: nonfinite values")
@@ -779,27 +932,11 @@ class FeatureBatch:
                 m = self.masks.get(spec.name)
                 if m is None or tuple(m.shape) != expected[:4]:
                     problems.append(f"{spec.name}: mask not aligned with [B,S,N,T]")
-                elif not any(bool(v) for v in _values(m)):
-                    problems.append(f"{spec.name}: mask has no observed steps")
         # temporal leakage: strict '<' is the ONLY availability predicate.
         # A field is a legal input whenever its timestamps are earlier than the
         # prediction time; post-game inputs need a later prediction time, not
         # a different field type. Labels live in OutputSpec, never in features.
-        if self.prediction_time is not None:
-            resolved, unknown = resolve_timed_specs(schema, self.available_at)
-            for name in unknown:
-                problems.append(f"available_at refers to unknown feature {name}")
-            for spec_name, times in resolved.items():
-                spec = next(f for f in schema.features if f.name == spec_name)
-                bad = timing_violations(
-                    schema, spec, times, self.prediction_time, batch,
-                    mask=self.masks.get(spec_name),
-                )
-                if bad:
-                    problems.append(
-                        f"{spec_name}: {bad} observed step(s) not strictly earlier "
-                        f"than prediction_time (predicate: available_at < prediction_time)"
-                    )
+        self.observation_masks(strict_time=strict_time)
         if self.targets is not None and self.schema.task.kind != "assignment":
             dim = self.schema.task.dim
             t = as_array(self.targets)
@@ -824,7 +961,8 @@ class FeatureBatch:
             "canonical_shapes": {
                 f.name: tuple(self.fields[f.name].shape) for f in schema.features
             },
-            "temporal_evidence_checked": self.prediction_time is not None,
+            "temporal_evidence_checked": bool(strict_time and self.prediction_time is not None
+                                              and self.available_at),
             "timed_features": [f.name for f in schema.features if f.available_at],
             "structures": {f.name: f.resolved_structure.value for f in schema.features},
             "orientation": schema.task.resolved_orientation.value,
@@ -834,6 +972,15 @@ class FeatureBatch:
 
 def _values(arr):
     return list(arr.flat) if hasattr(arr, "flat") else list(arr)
+
+
+def _field_values(arr, layout):
+    if layout is None:
+        return arr.flat
+    if _np is not None:
+        return arr[layout].flat
+    width = arr.shape[-1]
+    return (value for i, value in enumerate(arr.flat) if layout.flat[i // width])
 
 
 def _all_finite(values) -> bool:
@@ -910,6 +1057,7 @@ class FeatureEncoder:
         rng = random.Random(seed)
         self.schema, self.dim = schema, dim
         self.tables, self.projections, self.biases = {}, {}, {}
+        self.role_indices, self.role_weights, self.time_weights = {}, {}, {}
         for spec in schema.features:
             scale = 1.0 / math.sqrt(dim)
             if spec.modality is Modality.COEFFICIENT:
@@ -927,23 +1075,27 @@ class FeatureEncoder:
             self.biases[spec.name] = [
                 rng.gauss(0, 0.02) + 0.01 * (hash(cell) % 7) for _ in range(dim)
             ]
+            roles = schema.player_role_indices(spec)
+            if roles is not None:
+                self.role_indices[spec.name] = roles
+                self.role_weights[spec.name] = [
+                    [1 + rng.gauss(0, .1) for _ in range(dim)] for _ in range(1 + max(map(max, roles)))
+                ]
+            if spec.modality is Modality.SEQUENCE and spec.resolved_structure is Structure.ORDERED:
+                self.time_weights[spec.name] = [
+                    [1 + rng.gauss(0, .1) for _ in range(dim)] for _ in range(spec.steps)
+                ]
 
     def visible_fields(self, batch: FeatureBatch) -> tuple:
         """Same predicate as the trainable bridge: never encode hidden fields."""
-        if batch.prediction_time is None:
-            return tuple(self.schema.features)
-        view = self.schema.at(
-            batch.prediction_time, batch.available_at,
-            batch=batch.batch_size, masks=batch.masks,
-        )
-        return view.visible
+        return tuple(spec for spec, _ in batch.scoring_fields(self.schema))
 
     def __call__(self, batch: FeatureBatch) -> ModelInputs:
         B, S, N, D = batch.batch_size, self.schema.sides, self.schema.players, self.dim
         tokens = _array((B, S, N, D), 0.0)
         context = _array((B, D), 0.0)
-        for spec in self.visible_fields(batch):
-            local = self._encode_spec(spec, batch)          # [B,S_eff,N_eff,D]
+        for spec, mask in batch.scoring_fields(self.schema):
+            local = self._encode_spec(spec, batch, mask)    # [B,S_eff,N_eff,D]
             for b, s, n in itertools.product(range(B), range(S), range(N)):
                 ls = s if local.shape[1] > 1 else 0
                 ln = n if local.shape[2] > 1 else 0
@@ -962,13 +1114,6 @@ class FeatureEncoder:
                 for player in range(size, N):
                     for b in range(B):
                         _set(valid, (b, side, player), False)
-        for spec in self.schema.features:
-            if not spec.mask or spec.scope is not Scope.PLAYER:
-                continue
-            m = batch.masks[spec.name]
-            for b, s, n in itertools.product(range(B), range(S), range(N)):
-                if not any(bool(_get(m, (b, s, n, t))) for t in range(m.shape[3])):
-                    _set(valid, (b, s, n), False)
         team = _array((B, S, D), 0.0)
         for b, s in itertools.product(range(B), range(S)):
             count = sum(1 for n in range(N) if _get(valid, (b, s, n)))
@@ -980,25 +1125,31 @@ class FeatureEncoder:
                 _set(team, (b, s, d), total / max(count, 1))
         return ModelInputs(tokens, valid, context, team, self.schema)
 
-    def _encode_spec(self, spec, batch):
+    def _encode_spec(self, spec, batch, mask):
         B, D = batch.batch_size, self.dim
         shape = batch.fields[spec.name].shape
         _, S, N, T, C = shape
+        if spec.signed_channels:
+            S = 2
         out = _array((B, S, N, D), 0.0)
         arr = batch.fields[spec.name]
         wgt = batch.weights.get(spec.name)
-        mask = batch.masks.get(spec.name)
         table = self.tables.get(spec.name)
         proj = self.projections.get(spec.name)
+        positions = self.time_weights.get(spec.name)
+        roles = self.role_indices.get(spec.name)
         for b, s, n in itertools.product(range(B), range(S), range(N)):
+            source_side = 0 if spec.signed_channels else s
             acc = [0.0] * D
             count = 0
             for t in range(T):
-                if mask is not None and not bool(_get(mask, (b, s, n, t))):
+                if mask is not None and not bool(_get(mask, (b, source_side, n, t))):
                     continue
                 count += 1
                 for c in range(C):
-                    value = float(_get(arr, (b, s, n, t, c)))
+                    value = float(_get(arr, (b, source_side, n, t, c)))
+                    if s == 1 and c in spec.signed_channels:
+                        value = -value
                     if spec.modality is Modality.COEFFICIENT:
                         row = table[int(value)]
                         w = float(_get(wgt, (b, s, n, t, c))) if wgt is not None else 1.0
@@ -1006,12 +1157,18 @@ class FeatureEncoder:
                             acc[d] += row[d] * w
                     else:
                         for d in range(D):
-                            acc[d] += value * proj[c][d]
-            if count and (spec.reduce == "mean" or spec.modality is Modality.SEQUENCE):
+                            scale = positions[t][d] if positions is not None else 1.0
+                            acc[d] += value * proj[c][d] * scale
+            if not count:
+                continue
+            if spec.reduce == "mean" or spec.modality is Modality.SEQUENCE:
                 acc = [v / count for v in acc]
             bias = self.biases[spec.name]
             for d in range(D):
-                _set(out, (b, s, n, d), acc[d] + bias[d])
+                value = acc[d] + bias[d]
+                if roles is not None:
+                    value *= self.role_weights[spec.name][roles[s][n]][d]
+                _set(out, (b, s, n, d), value)
         return out
 
 
@@ -1053,6 +1210,7 @@ SCHEMAS: dict[str, FeatureSchema] = {
             FeatureSpec("rating_state", Modality.DENSE, Scope.PLAYER, 2, group="rating",
                         description="Elo/TrueSkill/OpenSkill mu,sigma indexed by roster"),
             FeatureSpec("calibration_terms", Modality.DENSE, Scope.MATCH, 4, group="rating",
+                        signed_channels=(0, 3),
                         description="s, abs(s), target mode d, s*d"),
         ],
     ),

@@ -156,15 +156,17 @@ inferred when omitted (`MATCH` → `SINGLE`, `TEAM` → `ORDERED`, `PLAYER` → 
 | `structure` | Meaning | Effect in `SchemaModel` |
 | --- | --- | --- |
 | `SET` | exchangeable members (hero roster) | permutation-invariant masked-mean pooling |
-| `ORDERED` | ordered slots (timeline, side order) | learnable slot embeddings before pooling |
+| `ORDERED` | ordered player slots or timeline | slot-dependent weighting of player or step content |
 | `SINGLE` | one entity (map, mode) | no pooling |
 
 `OutputSpec.orientation` declares what swapping the two sides does to the
 label. `ANTISYMMETRIC` (win/loss) uses a signed side difference and a bias-free
 head, so `f(swap(x)) == -f(x)`, and `model.augmented_batch(batch)` flips labels
-accordingly. `SYMMETRIC` and `NONE` use permutation-invariant pooling. For
-three-class WDL, augmentation reverses the class order rather than negating
-logits.
+accordingly. For exchangeable three-class WDL, swapping the teams reverses
+the class probabilities and preserves the draw probability. For the rating
+profile, `calibration_terms` channels 0 and 3 (score and score × mode) change
+sign on swap. Absolute score and mode stay fixed. Directed tasks on
+nonexchangeable teams retain the ordered team representations.
 
 `model.criterion()` and `model.targets(batch)` derive the loss and target shape
 from `OutputSpec` — no hand-written `BCEWithLogits` / `CrossEntropy` switch.
@@ -255,8 +257,9 @@ mid-training `IndexError` from `nn.Embedding` with a precise adapter error.
 
 ## One structural boundary
 
-The decision layer accepts unequal team sizes and role slots; the input layer
-does not (it assumes a fixed `N` per side and pads). See
+Use `players_per_side` for unequal teams and place the real players first on
+each side. Use `role_slots` to bind those positions to named roles. The
+decision layer enforces party and role eligibility. See
 [Where the input layer and the decision layer disagree](feature-framework-design.md#where-the-input-layer-and-the-decision-layer-disagree)
 before wiring a non-standard lobby.
 

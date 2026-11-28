@@ -90,8 +90,13 @@ inputs = FeatureEncoder(schema, dim=32)(batch)
 # inputs.match_context [B,D], inputs.team_context [B,S,D]
 ```
 
-`schema.at(prediction_time, available_at)` is the single availability
-predicate: it returns the fields observable at `t`. A post-game forecast (Dota
+`schema.at(prediction_time, available_at)` lists fields observable across
+the whole supplied batch. Both encoders apply the same strict cutoff to
+each candidate, player and step individually. A late history step is masked
+only at its own position. The player's static features still contribute to
+the team. With no timestamp evidence, scoring omits the timed field.
+`batch.validate()` rejects late observed steps when auditing source data.
+A post-game forecast (Dota
 future rating) sets a later prediction time and keeps its snapshot inputs; a
 pre-match prediction excludes them. Labels live in `OutputSpec`, never among
 the features. `predictor_schema(schema)` is a legacy alias that keeps all
@@ -156,9 +161,27 @@ it for `FeatureBatch.from_natural(schema, ...)` once your loader is ready.
   channels, 114 heroes); changing an adapter requires updating its spec.
 - All nine (modality × scope) cells are exercised by tests, including
   `MATCH × SEQUENCE`; natural-shaped masks are lifted to canonical `[B,S,N,T]`.
-- A binary `ANTISYMMETRIC` target has a provable sign flip under side swap
-  (signed pooling + bias-free head). Multi-class WDL uses label-reversing
-  augmentation instead; negating every class logit would be incorrect.
+- For exchangeable teams, binary logits change sign under side swap.
+  Ordered class probabilities reverse, including when using one-hot targets
+  for augmentation. The draw logit uses the team mean and absolute difference
+  and can learn a mode-specific rate even when both teams have equal strength.
+- Set `players_per_side=(1, 4)` for unequal teams, or
+  `side_roles=("attack", "defend")` for distinct sides of equal size.
+  Directional scoring preserves side order. To assign player roles pass
+  `role_slots=(("captain", "flex", "flex"), ("captain", "flex", "flex"))`
+  on a 3v3 schema. Arrange each side's player inputs in that order. Repeated
+  role names share weights. An explicitly ordered static player field with
+  unnamed slots uses the position index. Ordered sequences use time positions.
+- The model, encoder, target conversion and side swap check the batch contract.
+  When fitting a coefficient vocabulary, supply its ordered mapping fingerprint
+  in `FeatureSpec.vocabulary_values_sha256` on both the adapter and the model
+  schema. The native input contract exposes the digest under the same name.
+  With the digest omitted, only the declared vocabulary size is available.
+- New `SchemaModel.state_dict()` checkpoints include the contract hash.
+  Use the original code and declaration for existing checkpoints without this
+  fingerprint. The revised draw head, directional pooling and position gates
+  change the architecture or interpretation of weights and require retraining
+  before comparing results with the revised model.
 - Synthetic decision intervals are exploratory marginal intervals. They do not
   fix the deeper limitation that oracle regret and training labels come from
   the same hidden generator.
