@@ -174,9 +174,19 @@ class AugmentationAndHeadTests(unittest.TestCase):
         batch.targets = np.eye(schema.task.dim)[classes]
         batch.validate()
         targets = model.targets(batch)
-        self.assertEqual(tuple(targets.shape), (4,))
+        torch.testing.assert_close(targets, torch.tensor(batch.targets, dtype=torch.float32))
         self.assertTrue(torch.isfinite(
             model.criterion()(model(batch), targets)))
+
+    def test_soft_targets_preserve_cross_entropy(self):
+        schema = SCHEMAS["overwatch_history"]
+        model = make_model_from_schema(schema, dim=6)
+        batch = sample_inputs(schema, batch=1, seed=0)
+        batch.targets = np.array([[0.45, 0.45, 0.10]])
+        batch.validate()
+        logits = torch.tensor([[3.0, 0.0, 0.0]])
+        expected = -(torch.tensor(batch.targets).float() * logits.log_softmax(dim=1)).sum()
+        torch.testing.assert_close(model.criterion()(logits, model.targets(batch)), expected)
 
     def test_team_dense_has_no_dead_slot_parameter(self):
         schema = FeatureSchema(

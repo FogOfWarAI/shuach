@@ -233,7 +233,7 @@ def criterion_targets(spec: OutputSpec, targets, device=None):
     if spec.criterion() == "cross_entropy":
         # Accept class indices [B] or one-hot / soft labels [B, dim].
         if tensor.ndim == 2 and tensor.shape[1] == spec.dim:
-            return tensor.argmax(dim=1).long()
+            return tensor.float()
         return tensor.reshape(-1).long()
     return tensor.reshape(-1, spec.dim).float()
 
