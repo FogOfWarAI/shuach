@@ -14,10 +14,16 @@ Given a lobby, which teams should play each other? Shuach lets you score possibl
 
 ```mermaid
 flowchart TD
-    A["Historical matches"] --> B["Feature schema"] --> C["Outcome model"] --> D["Score candidate teams"]
+    T["Task selection · CLI command and protocol"] --> A["Data processing · load and split"]
+    A --> B["Feature inputs · adapter or feature schema"]
+    B --> C["Select and train a supported model"]
+    C --> P["Held-out predictions"] --> H["Prediction evaluation · protocol metrics"]
+    C --> D["Score candidate teams"]
     E["Lobby, parties and roles"] --> F["Generate feasible teams"] --> D
-    D --> G["Select assignment"] --> H["Evaluate and report"]
+    D --> G["Select assignment"] --> R["Synthetic decision evaluation · regret"]
 ```
+
+Benchmark configurations select data and models supported by the protocol, which determines the evaluation metrics. For schema-based models, a profile selects the features and prediction target. Custom data needs a mapping from source fields to those inputs.
 
 ## Run your first match
 
