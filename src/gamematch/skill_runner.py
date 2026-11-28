@@ -13,7 +13,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import torch
-from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
 from threadpoolctl import threadpool_limits
 from torch.utils.data import DataLoader, TensorDataset
@@ -22,31 +21,10 @@ from .artifacts import completed_fit, fit_files, seal_artifacts, verify_completi
 from .configuration import runtime_identity, validate_matrix, validate_training_settings
 from .data.heroes import HeroVocabulary
 from .data.skill import load_skill, skill_splits
+from .evaluation.regression import regression_metrics
 from .models.skill import make_skill_model
 from .models.tabular import hero_counts
 from .runner import code_hash, set_seed, write_json
-
-
-def regression_metrics(target, prediction):
-    y, p = np.asarray(target, dtype=float), np.asarray(prediction, dtype=float)
-    if (
-        y.ndim != 1
-        or y.shape != p.shape
-        or not len(y)
-        or not np.isfinite(y).all()
-        or not np.isfinite(p).all()
-    ):
-        raise ValueError("Expected finite, aligned, nonempty regression vectors")
-    error = p - y
-    variance = np.square(y - y.mean()).sum()
-    return {
-        "n": len(y),
-        "mae": float(np.abs(error).mean()),
-        "rmse": float(np.sqrt(np.square(error).mean())),
-        "mean_error": float(error.mean()),
-        "r2": float(1 - np.square(error).sum() / variance) if variance else None,
-        "spearman": float(spearmanr(y, p).statistic) if np.std(y) > 0 and np.std(p) > 0 else None,
-    }
 
 
 def infer_skill(model, dataset, batch_size, device):

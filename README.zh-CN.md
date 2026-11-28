@@ -10,12 +10,40 @@ GameMatch 是面向竞技游戏的 Python 研究库。给定一个小大厅，�
 
 ## 框架概览
 
+第一次接入自己的对局数据，可以跟随[从阵容到评估](docs/pipeline-zh.md)跑通一个模型，再逐步替换输入、特征和任务。
+
 ```mermaid
-flowchart TD
-    A["历史对局"] --> B["特征契约"] --> C["胜负预测模型"] --> D["为候选分队评分"]
-    E["大厅、组排与角色要求"] --> F["生成可行分队"] --> D
-    D --> G["选择分队方案"] --> H["评估与报告"]
+flowchart TB
+    subgraph task["任务选择"]
+        taskStep["选择实验协议与预测目标"]
+    end
+    subgraph data["数据处理"]
+        dataStep["读取对局 · 划分训练集与测试集"]
+    end
+    subgraph features["特征输入"]
+        featuresStep["映射字段 · 应用时间与掩码规则"]
+    end
+    subgraph model["模型训练"]
+        modelStep["选择兼容模型 · 训练与预测"]
+    end
+    subgraph evaluation["评估"]
+        prediction["预测质量<br/>测试集损失与校准"]
+        assignment["分队质量<br/>候选分队搜索与决策遗憾"]
+    end
+    taskStep --> modelStep
+    dataStep --> featuresStep --> modelStep
+    modelStep --> prediction
+    modelStep --> assignment
+    style task fill:#f5f3ff,stroke:#7755aa,color:#182538,stroke-width:2px
+    style data fill:#eff6ff,stroke:#4676a8,color:#182538,stroke-width:2px
+    style features fill:#ecfdf5,stroke:#408269,color:#182538,stroke-width:2px
+    style model fill:#fff7ed,stroke:#ac7033,color:#182538,stroke-width:2px
+    style evaluation fill:#f1f5f9,stroke:#52647b,color:#182538,stroke-width:2px
+    classDef content fill:#ffffff,stroke:#788697,color:#182538
+    class taskStep,dataStep,featuresStep,modelStep,prediction,assignment content
 ```
+
+基准配置可选择该协议支持的数据和模型，评估指标由协议决定。声明式模型通过 profile 选择特征和预测目标；接入自有数据时，需要将原始字段映射到对应输入。
 
 ## 快速使用
 

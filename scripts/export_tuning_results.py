@@ -22,7 +22,6 @@ from audit_tuning_integrity import broad_selection, source_identity
 from extended_metrics import extended_metrics
 from plotting_fonts import configure_plot_font
 
-from gamematch.asymmetric_runner import ordinal_metrics
 from gamematch.evaluation.binary import binary_metrics
 from gamematch.evaluation.comparison import (
     load_predictions,
@@ -30,7 +29,8 @@ from gamematch.evaluation.comparison import (
     per_example_loss,
 )
 from gamematch.evaluation.multiclass import multiclass_metrics
-from gamematch.skill_runner import regression_metrics
+from gamematch.evaluation.ordinal import ordinal_metrics
+from gamematch.evaluation.regression import regression_metrics
 from gamematch.tuning.search import MATRIX, select_trial
 
 ROOT = Path(__file__).resolve().parents[1]

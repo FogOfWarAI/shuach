@@ -7,7 +7,7 @@ import numpy as np
 
 from gamematch.evaluation.binary import binary_metrics
 from gamematch.evaluation.multiclass import multiclass_metrics
-from gamematch.skill_runner import regression_metrics
+from gamematch.evaluation.regression import regression_metrics
 
 
 def extended_metrics(data):
